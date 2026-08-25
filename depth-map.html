@@ -1,0 +1,2479 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Depth map</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --void: #131518;
+    --rail: #191c20;
+    --sunk: #101215;
+    --line: #272b31;
+    --line-soft: #1f2328;
+    --text: #e6e8ea;
+    --dim: #868d96;
+    --amber: #d9a441;
+    --amber-dim: #7d5f26;
+    --viewbox: #2b2b2b;
+    --red: #d4674f;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { height: 100%; }
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--void);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--amber); color: #17130a; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  .topbar {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--rail), var(--void));
+  }
+  .topbar::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: var(--amber);
+    opacity: .34;
+    pointer-events: none;
+  }
+  .wordmark {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .wordmark i {
+    width: 9px; height: 9px;
+    background: var(--amber);
+    display: block;
+    font-style: normal;
+  }
+  .fileinfo {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--dim);
+    letter-spacing: .05em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 372px minmax(0, 1fr);
+  }
+  @media (max-width: 900px) {
+    body { height: auto; overflow: auto; display: block; }
+    .shell { grid-template-columns: 1fr; }
+    .rail { border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+    .stage { overflow: visible; }
+    .viewport { min-height: 320px; }
+    .viewport img, .viewport canvas { max-height: 60vh; }
+  }
+
+  .rail {
+    border-right: 1px solid var(--line);
+    background: var(--rail);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .block { display: flex; flex-direction: column; gap: 12px; }
+  .blocktitle {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: #aab1ba;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+  }
+  .blocktitle::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field > label {
+    font-size: 12.5px;
+    color: #c5cbd3;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .field .num {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  select {
+    width: 100%;
+    appearance: none;
+    background: var(--sunk) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='7'><path d='M0 0h10L5 7z' fill='%23868d96'/></svg>") no-repeat right 12px center;
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13.5px;
+    padding: 10px 30px 10px 11px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  select:hover { border-color: #363b43; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 18px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: var(--line); }
+  input[type="range"]::-moz-range-track { height: 2px; background: var(--line); }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--text);
+    margin-top: -5.5px;
+    border: 0;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    background: var(--text);
+    border: 0;
+  }
+  input[type="range"]:hover::-webkit-slider-thumb { background: var(--amber); }
+  input[type="range"]:hover::-moz-range-thumb { background: var(--amber); }
+
+  button {
+    font-family: var(--sans);
+    font-size: 13.5px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--sunk);
+    color: var(--text);
+    padding: 11px 12px;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  button:hover:not(:disabled) { border-color: #3a4048; background: #1b1e23; }
+  button:disabled { opacity: .38; cursor: not-allowed; }
+  button.primary {
+    background: var(--amber);
+    border-color: var(--amber);
+    color: #17130a;
+    font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) { background: #e7b355; border-color: #e7b355; }
+  button.tiny {
+    padding: 7px 9px;
+    font-size: 11.5px;
+    font-family: var(--mono);
+    letter-spacing: .04em;
+    color: var(--dim);
+  }
+  button.tiny:hover:not(:disabled) { color: var(--text); }
+  button.tiny[aria-pressed="true"] { color: var(--amber); border-color: var(--amber-dim); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+
+  .drop {
+    border: 1px dashed #333941;
+    border-radius: 8px;
+    background: var(--sunk);
+    padding: 22px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .drop:hover, .drop.drag { border-color: var(--amber); background: #1c1a15; }
+  .drop b { display: block; font-weight: 500; font-size: 13.5px; }
+  .drop span { display: block; margin-top: 4px; font-size: 11.5px; color: var(--dim); font-family: var(--mono); letter-spacing: .04em; }
+  input[type="file"] { display: none; }
+
+  .instrument {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--sunk);
+    padding: 9px 9px 6px;
+    touch-action: none;
+  }
+  #curve { display: block; width: 100%; height: auto; cursor: crosshair; }
+  .legend {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--dim);
+    letter-spacing: .06em;
+    padding: 4px 2px 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Secondo livello: rifiniture, non decisioni. Rientro con filo verticale,
+     etichette in mono piu' piccole, controlli meno alti. */
+  .sub {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    border-left: 1px solid var(--line);
+    padding-left: 13px;
+  }
+  .sub > .field > label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .sub select { padding: 8px 30px 8px 10px; font-size: 13px; }
+  .summary {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    color: var(--amber);
+    opacity: .8;
+    font-variant-numeric: tabular-nums;
+    padding-left: 13px;
+    border-left: 1px solid var(--amber-dim);
+  }
+  .primary-slot { margin-top: 3px; }
+  .linkbtn {
+    border: 0;
+    background: none;
+    padding: 0;
+    width: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    cursor: pointer;
+  }
+  .linkbtn:hover:not(:disabled) { color: var(--amber); background: none; }
+  .linkbtn:disabled { opacity: .4; }
+
+  .fieldhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .fieldhead label { margin: 0; }
+  .seg.mini { border-radius: 5px; }
+  .seg.mini button { padding: 4px 9px; font-size: 10px; letter-spacing: .12em; }
+  .numrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .inputwrap { position: relative; display: block; }
+  .inputwrap input {
+    width: 100%;
+    background: var(--sunk);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 40px 8px 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    -moz-appearance: textfield;
+  }
+  .inputwrap input::-webkit-outer-spin-button,
+  .inputwrap input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .inputwrap input:hover { border-color: #363b43; }
+  .inputwrap em {
+    position: absolute;
+    right: 10px; top: 50%;
+    transform: translateY(-50%);
+    font-style: normal;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    pointer-events: none;
+  }
+  .note { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--dim); }
+  .note b { color: #c5cbd3; font-weight: 600; }
+
+  .cacheline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .05em;
+    color: var(--dim);
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+    margin-top: auto;
+  }
+  .cacheline button { padding: 4px 8px; font-size: 10.5px; font-family: var(--mono); }
+
+  .stage {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .stagehead { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--sunk);
+  }
+  .seg button {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--dim);
+    padding: 8px 14px;
+  }
+  .seg button[aria-pressed="true"] { background: #23262b; color: var(--text); }
+  .dims {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: .06em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .viewport {
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--viewbox);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 22px;
+    overflow: hidden;
+    min-height: 320px;
+  }
+  .viewport img, .viewport canvas {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  }
+  .viewport .empty {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .08em;
+    color: #7a7a7a;
+    text-transform: uppercase;
+  }
+  .fade { animation: fade .28s ease both; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+  .statusbar { display: flex; flex-direction: column; gap: 8px; }
+  .statusbar .track { height: 2px; background: var(--line-soft); overflow: hidden; }
+  .statusbar .track > div { height: 100%; width: 0; background: var(--amber); transition: width .25s ease; }
+  .statusbar .line {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .04em;
+    color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .statusbar .line.err { color: var(--red); }
+  .statusbar .line.ok { color: var(--amber); }
+  .statusbar .msg { white-space: pre-wrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wordmark"><i></i> Depth map</div>
+  <div class="fileinfo" id="fileinfo">nessun file</div>
+</div>
+
+<div class="shell">
+  <aside class="rail">
+
+    <div class="block">
+      <h2 class="blocktitle">Sorgente</h2>
+      <div class="drop" id="drop" tabindex="0" role="button">
+        <b>Trascina un'immagine</b>
+        <span>o clicca per sceglierla</span>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" />
+    </div>
+
+    <div class="block">
+      <h2 class="blocktitle">Analisi</h2>
+      <div class="field">
+        <label for="detail">Dettaglio</label>
+        <select id="detail">
+          <option value="1">Intera, una passata · consigliata</option>
+          <option value="3">A tile 3×3 · soggetti ravvicinati</option>
+          <option value="4">A tile 4×4 · soggetti ravvicinati</option>
+        </select>
+      </div>
+      <div class="summary" id="summary">nessuna immagine</div>
+      <p class="note" id="detailNote"></p>
+
+      <div class="sub">
+        <div class="field">
+          <div class="fieldhead">
+            <label for="outSize">Lato lungo in uscita</label>
+            <div class="seg mini" role="group">
+              <button id="unitPx" aria-pressed="true">px</button>
+              <button id="unitMm" aria-pressed="false">mm</button>
+            </div>
+          </div>
+          <div class="numrow">
+            <span class="inputwrap"><input type="number" id="outSize" min="256" max="8000" step="1" value="1536" /><em id="outUnit">px</em></span>
+            <span class="inputwrap"><input type="number" id="dpi" min="72" max="1200" step="1" value="300" /><em>dpi</em></span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="modelSelect">Modello</label>
+          <select id="modelSelect">
+            <optgroup label="Collaudati">
+              <option value="onnx-community/depth-anything-v2-small">Depth Anything v2 small</option>
+              <option value="Xenova/dpt-hybrid-midas">MiDaS DPT hybrid</option>
+              <option value="Xenova/depth-anything-base-hf">Depth Anything base</option>
+              <option value="Xenova/depth-anything-small-hf">Depth Anything v1 small</option>
+            </optgroup>
+          </select>
+          <p class="note" id="modelNote"></p>
+        </div>
+      </div>
+
+      <div class="primary-slot"><button class="primary" id="generate" disabled>Genera depth map</button></div>
+    </div>
+
+    <div class="block">
+      <h2 class="blocktitle">Resa</h2>
+      <div class="field">
+        <label for="presetSelect">Preset</label>
+        <select id="presetSelect"></select>
+      </div>
+      <div class="pair">
+        <button class="tiny" id="savePreset">Salva attuale</button>
+        <button class="tiny" id="deletePreset">Elimina</button>
+      </div>
+
+      <div class="instrument">
+        <canvas id="curve" width="660" height="660"></canvas>
+        <div class="legend">
+          <span id="legendLow">nero 2%</span>
+          <span id="legendHint">clicca per aggiungere un punto</span>
+          <span id="legendHigh">bianco 98%</span>
+        </div>
+      </div>
+      <div class="pair">
+        <button class="tiny" id="curveReset">Azzera curva e tagli</button>
+        <button class="tiny" id="invertBtn" aria-pressed="false">Inverti profondità</button>
+      </div>
+
+      <div class="sub">
+        <div class="field">
+          <label for="palette">Palette</label>
+          <select id="palette">
+            <option value="gray">Scala di grigi</option>
+            <option value="xray">Raggi X</option>
+            <option value="thermal">Termica</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="equalize">Espandi lontananza <span class="num" id="equalizeVal">0%</span></label>
+          <input type="range" id="equalize" min="0" max="100" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label for="edges">Contorni <span class="num" id="edgesVal">0%</span></label>
+          <input type="range" id="edges" min="0" max="100" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label for="blur">Sfocatura <span class="num" id="blurVal">0 px</span></label>
+          <input type="range" id="blur" min="0" max="20" step="0.5" value="0" />
+        </div>
+        <div class="field">
+          <label for="grain">Grana <span class="num" id="grainVal">0%</span></label>
+          <input type="range" id="grain" min="0" max="100" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label for="grainSize">Dimensione grana <span class="num" id="grainSizeVal">1 px</span></label>
+          <input type="range" id="grainSize" min="1" max="8" step="0.5" value="1" />
+        </div>
+        <div class="field">
+          <label for="quality">Qualità JPG <span class="num" id="qualityVal">92%</span></label>
+          <input type="range" id="quality" min="50" max="100" step="1" value="92" />
+        </div>
+      </div>
+
+      <div class="primary-slot"><button id="download" disabled>Scarica JPG</button></div>
+    </div>
+
+    <div class="cacheline">
+      <span id="cacheInfo">cache vuota</span>
+      <button id="clearCache">svuota</button>
+    </div>
+  </aside>
+
+  <main class="stage">
+    <div class="stagehead">
+      <div class="seg" role="group">
+        <button id="viewDepth" aria-pressed="true">Depth</button>
+        <button id="viewSource" aria-pressed="false">Originale</button>
+      </div>
+      <div class="dims" id="dims"></div>
+    </div>
+
+    <div class="viewport" id="viewport">
+      <span class="empty">nessuna immagine</span>
+    </div>
+
+    <div class="statusbar">
+      <div class="track"><div id="bar"></div></div>
+      <div class="line" id="statusLine">
+        <span class="msg" id="statusMsg">Carica un'immagine per iniziare.</span>
+        <span id="statusStep"></span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
+
+/* ---------- cache modelli su IndexedDB ---------- */
+
+const DB_NAME = 'depthmap-model-cache';
+let dbPromise = null;
+
+function openDb() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return dbPromise;
+}
+
+function idb(store, mode, run) {
+  return openDb().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, mode);
+    const req = run(tx.objectStore(store));
+    tx.onerror = () => reject(tx.error);
+    if (req) {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } else {
+      tx.oncomplete = () => resolve(undefined);
+    }
+  }));
+}
+
+const idbCache = {
+  async match(request) {
+    try {
+      const rec = await idb('files', 'readonly', s => s.get(request));
+      if (!rec) return undefined;
+      const headers = new Headers();
+      if (rec.type) headers.set('content-type', rec.type);
+      headers.set('content-length', String(rec.buffer.byteLength));
+      return new Response(rec.buffer, { status: 200, headers });
+    } catch (e) {
+      return undefined;
+    }
+  },
+  async put(request, response, progress_callback) {
+    try {
+      const total = Number(response.headers.get('content-length')) || 0;
+      let buffer;
+      if (progress_callback && response.body && typeof response.body.getReader === 'function') {
+        const reader = response.body.getReader();
+        const chunks = [];
+        let loaded = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          loaded += value.byteLength;
+          progress_callback({ progress: total ? (loaded / total) * 100 : 0, loaded, total });
+        }
+        const merged = new Uint8Array(loaded);
+        let offset = 0;
+        for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
+        buffer = merged.buffer;
+      } else {
+        buffer = await response.arrayBuffer();
+      }
+      const type = response.headers.get('content-type') || '';
+      await idb('files', 'readwrite', s => s.put({ buffer, type }, request));
+      await idb('meta', 'readwrite', s => s.put({ size: buffer.byteLength }, request));
+      refreshCacheInfo();
+    } catch (e) {
+      console.warn('cache put', e);
+    }
+  },
+  async delete(request) {
+    await idb('files', 'readwrite', s => s.delete(request));
+    await idb('meta', 'readwrite', s => s.delete(request));
+    return true;
+  },
+};
+
+const IS_SAFARI = typeof navigator !== 'undefined'
+  && /Apple/.test(navigator.vendor || '')
+  && !/CriOS|FxiOS|Chrome|Chromium|Edg/.test(navigator.userAgent);
+
+// I thread wasm hanno bisogno di memoria condivisa, e la memoria condivisa si
+// puo' passare a un worker solo se la pagina e' cross-origin isolated. Se non lo
+// e', il postMessage della SharedArrayBuffer fallisce: su WebKit con
+// DataCloneError. SharedArrayBuffer puo' esistere lo stesso, quindi non basta
+// controllare quello: l'unico test affidabile e' crossOriginIsolated.
+const CAN_THREAD = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated === true;
+
+if (env.backends && env.backends.onnx && env.backends.onnx.wasm) {
+  const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 1;
+  env.backends.onnx.wasm.numThreads = CAN_THREAD ? Math.max(1, Math.min(8, cores - 1)) : 1;
+  env.backends.onnx.wasm.proxy = false;
+}
+
+function envReport() {
+  const wasm = (env.backends && env.backends.onnx && env.backends.onnx.wasm) || {};
+  return [
+    IS_SAFARI ? 'safari' : 'non-safari',
+    location.protocol,
+    'COI:' + CAN_THREAD,
+    'SAB:' + (typeof SharedArrayBuffer !== 'undefined'),
+    'threads:' + wasm.numThreads,
+  ].join(' · ');
+}
+
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
+env.useBrowserCache = false;
+env.useCustomCache = true;
+env.customCache = idbCache;
+
+function humanSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
+  return (bytes / 1048576).toFixed(0) + ' MB';
+}
+
+function modelIdFromKey(key) {
+  const m = String(key).match(/huggingface\.co\/([^/]+\/[^/]+)\//);
+  return m ? m[1] : String(key);
+}
+
+async function refreshCacheInfo() {
+  const el = $('cacheInfo');
+  try {
+    const db = await openDb();
+    const rows = await new Promise((resolve, reject) => {
+      const req = db.transaction('meta', 'readonly').objectStore('meta').openCursor();
+      const out = [];
+      req.onsuccess = () => {
+        const c = req.result;
+        if (c) { out.push({ key: c.key, size: c.value.size || 0 }); c.continue(); }
+        else resolve(out);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    if (!rows.length) { el.textContent = 'cache vuota'; return; }
+    const models = new Set(rows.map(r => modelIdFromKey(r.key)));
+    const total = rows.reduce((a, r) => a + r.size, 0);
+    el.textContent = `${models.size} modello${models.size > 1 ? 'i' : ''} in cache · ${humanSize(total)}`;
+  } catch (e) {
+    el.textContent = 'cache non disponibile';
+  }
+}
+
+/* ---------- riferimenti ---------- */
+
+const $ = (id) => document.getElementById(id);
+const drop = $('drop');
+const fileInput = $('fileInput');
+const generateBtn = $('generate');
+const downloadBtn = $('download');
+const viewport = $('viewport');
+const statusMsg = $('statusMsg');
+const statusStep = $('statusStep');
+const statusLine = $('statusLine');
+const bar = $('bar');
+
+const controls = {
+  modelSelect: $('modelSelect'),
+  detail: $('detail'),
+  outSize: $('outSize'),
+  dpi: $('dpi'),
+  palette: $('palette'),
+  blur: $('blur'),
+  edges: $('edges'),
+  equalize: $('equalize'),
+  grain: $('grain'),
+  grainSize: $('grainSize'),
+  quality: $('quality'),
+};
+
+let sourceImage = null;
+let sourcePreview = null;
+let srcW = 0;
+let srcH = 0;
+let sourceName = 'depth-map';
+let fullDepth = null;
+let fullRefined = null;
+let proxyDepth = null;
+let proxyRefined = null;
+let depthCanvas = null;
+let histogram = null;
+let cdf = null;
+// Nessun taglio di partenza. I valori estremi di una depth map non sono pixel
+// spuri da scartare come in fotografia: sono il punto piu' lontano e quello piu'
+// vicino della scena. Chi li vuole tagliare sposta le maniglie.
+let blackPct = 0;
+let whitePct = 100;
+let lowVal = 0;
+let highVal = 1;
+let curvePoints = [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+let view = 'depth';
+let busy = false;
+let cancelRequested = false;
+let embeddedBlock = false;
+let renderTimer = null;
+const estimators = new Map();
+
+const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+
+function setStatus(text, tone = '') {
+  statusMsg.textContent = text;
+  statusLine.className = 'line' + (tone ? ' ' + tone : '');
+}
+
+function setProgress(pct, label) {
+  bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  statusStep.textContent = label || '';
+}
+
+function baseName(name) {
+  return (name || 'depth-map').replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'depth-map';
+}
+
+/* ---------- curva ---------- */
+
+// Espansione automatica della lontananza. In un paesaggio le cose lontane
+// occupano molti pixel ma pochissimi livelli, perche' sono davvero tutte quasi
+// alla stessa distanza. Questa curva ridistribuisce i livelli in proporzione a
+// quanti pixel contiene ogni fascia, quindi apre le zone affollate.
+//
+// L'equalizzazione pura pero' amplifica il rumore dove l'istogramma ha un picco:
+// sulla foto di prova arrivava a 10 volte, per via del cielo tutto a zero.
+// Limito la pendenza redistribuendo l'eccesso, come si fa nel CLAHE.
+// Il limite di pendenza cresce col cursore: a meta' corsa resta prudente, a
+// fondo corsa lascia lavorare l'equalizzazione quasi per intero. Con la curva
+// letta per interpolazione la sgranatura non e' piu' il fattore limitante.
+function eqClipFor(amount) {
+  return 1.5 + amount * 10.5;
+}
+
+function buildEqualizeLut(clipLimit) {
+  if (!eqHistogram) return null;
+  const bins = eqHistogram.length;
+  const h = Float64Array.from(eqHistogram);
+  let total = 0;
+  for (let i = 0; i < bins; i++) total += h[i];
+  if (total <= 0) return null;
+
+  const clip = clipLimit * (total / bins);
+  let excess = 0;
+  for (let i = 0; i < bins; i++) {
+    if (h[i] > clip) { excess += h[i] - clip; h[i] = clip; }
+  }
+  const share = excess / bins;
+  let sum = 0;
+  const c = new Float64Array(bins);
+  for (let i = 0; i < bins; i++) { sum += h[i] + share; c[i] = sum; }
+  const first = c[0];
+  const span = c[bins - 1] - first;
+  if (!(span > 0)) return null;
+
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const pos = (i / 255) * (bins - 1);
+    const j = Math.floor(pos);
+    const f = pos - j;
+    const a = (c[j] - first) / span;
+    const b = (c[Math.min(bins - 1, j + 1)] - first) / span;
+    lut[i] = clamp01(a + (b - a) * f);
+  }
+  return lut;
+}
+
+function buildCurveLut() {
+  const pts = [];
+  const sorted = [...curvePoints].sort((a, b) => a.x - b.x);
+  for (const p of sorted) {
+    if (pts.length && Math.abs(p.x - pts[pts.length - 1].x) < 1e-4) pts[pts.length - 1] = p;
+    else pts.push(p);
+  }
+  const n = pts.length;
+  const lut = new Float32Array(256);
+  if (n < 2) {
+    for (let i = 0; i < 256; i++) lut[i] = i / 255;
+    return lut;
+  }
+  const xs = pts.map(p => p.x);
+  const ys = pts.map(p => p.y);
+  const d = new Array(n - 1);
+  for (let i = 0; i < n - 1; i++) d[i] = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]);
+  const m = new Array(n);
+  m[0] = d[0];
+  m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = (d[i - 1] + d[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+    const a = m[i] / d[i];
+    const b = m[i + 1] / d[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const t = 3 / Math.sqrt(s);
+      m[i] = t * a * d[i];
+      m[i + 1] = t * b * d[i];
+    }
+  }
+  let seg = 0;
+  for (let i = 0; i < 256; i++) {
+    const x = i / 255;
+    while (seg < n - 2 && x > xs[seg + 1]) seg++;
+    if (x <= xs[0]) { lut[i] = clamp01(ys[0]); continue; }
+    if (x >= xs[n - 1]) { lut[i] = clamp01(ys[n - 1]); continue; }
+    const h = xs[seg + 1] - xs[seg];
+    const t = (x - xs[seg]) / h;
+    const t2 = t * t;
+    const t3 = t2 * t;
+    lut[i] = clamp01(
+      (2 * t3 - 3 * t2 + 1) * ys[seg] +
+      (t3 - 2 * t2 + t) * h * m[seg] +
+      (-2 * t3 + 3 * t2) * ys[seg + 1] +
+      (t3 - t2) * h * m[seg + 1],
+    );
+  }
+  return lut;
+}
+
+/* ---------- palette ---------- */
+
+const RAMPS = {
+  gray: [[0, '#000000'], [1, '#ffffff']],
+  xray: [[0, '#04070d'], [0.22, '#0a2432'], [0.48, '#13596f'], [0.72, '#5fb4cd'], [0.9, '#c6e9f4'], [1, '#f4fcff']],
+  thermal: [[0, '#000018'], [0.2, '#2b0a5e'], [0.42, '#8f1a6e'], [0.62, '#df4b34'], [0.82, '#f7b32b'], [1, '#fffbe8']],
+};
+
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+const paletteCache = new Map();
+
+function paletteLut(name) {
+  if (paletteCache.has(name)) return paletteCache.get(name);
+  const stops = (RAMPS[name] || RAMPS.gray).map(([pos, hex]) => ({ pos, rgb: hexToRgb(hex) }));
+  const lut = new Uint8ClampedArray(768);
+  let seg = 0;
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    while (seg < stops.length - 2 && t > stops[seg + 1].pos) seg++;
+    const a = stops[seg];
+    const b = stops[seg + 1] || stops[seg];
+    const f = clamp01((t - a.pos) / Math.max(1e-6, b.pos - a.pos));
+    lut[i * 3] = a.rgb[0] + (b.rgb[0] - a.rgb[0]) * f;
+    lut[i * 3 + 1] = a.rgb[1] + (b.rgb[1] - a.rgb[1]) * f;
+    lut[i * 3 + 2] = a.rgb[2] + (b.rgb[2] - a.rgb[2]) * f;
+  }
+  paletteCache.set(name, lut);
+  return lut;
+}
+
+/* ---------- strumento: istogramma, curva, tagli, rampa ---------- */
+
+const curveCanvas = $('curve');
+const cctx = curveCanvas.getContext('2d');
+const CW = 660;
+const PLOT_H = 520;
+const GUT = 66;
+const RAMP_H = 74;
+curveCanvas.height = PLOT_H + GUT + RAMP_H;
+let dragMode = null;
+let dragIndex = -1;
+
+function valueToX(v) { return v * CW; }
+
+// Le due maniglie misurano cose diverse, e vanno lette di conseguenza.
+// Il punto nero dice quanti pixel vengono schiacciati sul nero, cioe' quelli
+// STRETTAMENTE sotto la soglia: a fondo corsa deve leggere 0%. Il punto bianco
+// dice fin dove arriva il segnale conservato, quindi include l'intervallo in cui
+// cade: a fondo corsa deve leggere 100%.
+function pctBelow(v) {
+  if (!cdf) return v * 100;
+  const idx = Math.round(clamp01(v) * (cdf.length - 1));
+  return idx > 0 ? cdf[idx - 1] * 100 : 0;
+}
+
+function pctUpTo(v) {
+  if (!cdf) return v * 100;
+  const idx = Math.round(clamp01(v) * (cdf.length - 1));
+  return cdf[idx] * 100;
+}
+
+function valueFromPct(pct, below = false) {
+  if (!cdf) return pct / 100;
+  const target = pct / 100;
+  for (let i = 0; i < cdf.length; i++) {
+    const frac = below ? (i > 0 ? cdf[i - 1] : 0) : cdf[i];
+    if (frac >= target) return i / (cdf.length - 1);
+  }
+  return 1;
+}
+
+// I percentili restano l'unità dei preset, così valgono su immagini diverse.
+// Le maniglie invece vivono in valori assoluti, per non incollarsi sui tratti
+// piatti dell'istogramma.
+function syncValsFromPct() {
+  lowVal = valueFromPct(blackPct, true);
+  highVal = valueFromPct(whitePct);
+  if (highVal <= lowVal) { lowVal = 0; highVal = 1; }
+}
+
+function drawInstrument() {
+  const ctx = cctx;
+  const H = curveCanvas.height;
+  ctx.clearRect(0, 0, CW, H);
+
+  ctx.fillStyle = '#101215';
+  ctx.fillRect(0, 0, CW, PLOT_H);
+
+  // griglia
+  ctx.strokeStyle = '#1e2228';
+  ctx.lineWidth = 2;
+  for (let i = 1; i < 4; i++) {
+    const gx = (CW / 4) * i;
+    const gy = (PLOT_H / 4) * i;
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, PLOT_H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CW, gy); ctx.stroke();
+  }
+
+  // istogramma
+  if (histogram) {
+    const bins = histogram.length;
+    let peak = 0;
+    for (const c of histogram) if (c > peak) peak = c;
+    const norm = Math.log(1 + peak);
+    ctx.fillStyle = '#2c3138';
+    for (let i = 0; i < bins; i++) {
+      const h = norm > 0 ? (Math.log(1 + histogram[i]) / norm) * PLOT_H * 0.92 : 0;
+      ctx.fillRect((i / bins) * CW, PLOT_H - h, CW / bins + 0.6, h);
+    }
+  }
+
+  const lowX = valueToX(lowVal);
+  const highX = valueToX(highVal);
+
+  // zone tagliate
+  ctx.fillStyle = 'rgba(10,11,13,.72)';
+  ctx.fillRect(0, 0, lowX, PLOT_H);
+  ctx.fillRect(highX, 0, CW - highX, PLOT_H);
+
+  // curva, disegnata nell'intervallo utile
+  const lut = buildCurveLut();
+  ctx.strokeStyle = '#d9a441';
+  ctx.lineWidth = 4;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    const px = lowX + t * (highX - lowX);
+    const py = PLOT_H - lut[i] * PLOT_H;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // punti
+  for (const p of curvePoints) {
+    const px = lowX + p.x * (highX - lowX);
+    const py = PLOT_H - p.y * PLOT_H;
+    ctx.beginPath();
+    ctx.arc(px, py, 9, 0, Math.PI * 2);
+    ctx.fillStyle = '#131518';
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#f0c368';
+    ctx.stroke();
+  }
+
+  // maniglie di taglio
+  ctx.fillStyle = '#191c20';
+  ctx.fillRect(0, PLOT_H, CW, GUT);
+  ctx.strokeStyle = '#272b31';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, PLOT_H + 1); ctx.lineTo(CW, PLOT_H + 1); ctx.stroke();
+
+  const drawHandle = (rawX, fill) => {
+    const x = Math.max(17, Math.min(CW - 17, rawX));
+    ctx.beginPath();
+    ctx.moveTo(x, PLOT_H + 6);
+    ctx.lineTo(x + 16, PLOT_H + 40);
+    ctx.lineTo(x - 16, PLOT_H + 40);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = '#3c424a';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  };
+  drawHandle(lowX, '#0a0b0d');
+  drawHandle(highX, '#e9ebee');
+
+  // rampa di uscita
+  const pal = paletteLut(controls.palette.value);
+  const rampTop = PLOT_H + GUT + 8;
+  const rampH = RAMP_H - 16;
+  for (let i = 0; i < 256; i++) {
+    const src = invert ? 255 - i : i;
+    const v = Math.round(lut[src] * 255);
+    ctx.fillStyle = `rgb(${pal[v * 3]},${pal[v * 3 + 1]},${pal[v * 3 + 2]})`;
+    ctx.fillRect((i / 256) * CW, rampTop, CW / 256 + 0.6, rampH);
+  }
+  ctx.strokeStyle = '#272b31';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, rampTop, CW - 2, rampH);
+
+  $('legendLow').textContent = `nero ${blackPct.toFixed(1)}%`;
+  $('legendHigh').textContent = `bianco ${whitePct.toFixed(1)}%`;
+}
+
+function curvePos(e) {
+  const rect = curveCanvas.getBoundingClientRect();
+  const scale = CW / rect.width;
+  const cx = (e.clientX - rect.left) * scale;
+  const cy = (e.clientY - rect.top) * scale;
+  return { cx, cy };
+}
+
+curveCanvas.addEventListener('pointerdown', (e) => {
+  const { cx, cy } = curvePos(e);
+  const lowX = valueToX(lowVal);
+  const highX = valueToX(highVal);
+
+  if (cy > PLOT_H) {
+    dragMode = Math.abs(cx - lowX) <= Math.abs(cx - highX) ? 'low' : 'high';
+    curveCanvas.setPointerCapture(e.pointerId);
+    moveHandle(cx);
+    return;
+  }
+
+  const span = Math.max(1e-6, highX - lowX);
+  const x = clamp01((cx - lowX) / span);
+  const y = clamp01(1 - cy / PLOT_H);
+  let idx = -1;
+  let best = 0.07;
+  for (let i = 0; i < curvePoints.length; i++) {
+    const dist = Math.hypot(curvePoints[i].x - x, curvePoints[i].y - y);
+    if (dist < best) { best = dist; idx = i; }
+  }
+  if (idx === -1) {
+    const added = { x, y };
+    curvePoints.push(added);
+    curvePoints.sort((a, b) => a.x - b.x);
+    idx = curvePoints.indexOf(added);
+  }
+  dragMode = 'point';
+  dragIndex = idx;
+  curveCanvas.setPointerCapture(e.pointerId);
+  drawInstrument();
+  schedulePreview();
+});
+
+function moveHandle(cx) {
+  const v = clamp01(cx / CW);
+  if (dragMode === 'low') {
+    lowVal = Math.min(v, highVal - 0.01);
+    blackPct = pctBelow(lowVal);
+  } else {
+    highVal = Math.max(v, lowVal + 0.01);
+    whitePct = pctUpTo(highVal);
+  }
+  drawInstrument();
+  schedulePreview();
+}
+
+curveCanvas.addEventListener('pointermove', (e) => {
+  if (!dragMode) return;
+  const { cx, cy } = curvePos(e);
+  if (dragMode === 'low' || dragMode === 'high') { moveHandle(cx); return; }
+  const lowX = valueToX(lowVal);
+  const highX = valueToX(highVal);
+  const span = Math.max(1e-6, highX - lowX);
+  const p = curvePoints[dragIndex];
+  if (!p) return;
+  p.y = clamp01(1 - cy / PLOT_H);
+  if (dragIndex === 0) p.x = 0;
+  else if (dragIndex === curvePoints.length - 1) p.x = 1;
+  else {
+    const x = clamp01((cx - lowX) / span);
+    p.x = Math.max(curvePoints[dragIndex - 1].x + 0.01, Math.min(curvePoints[dragIndex + 1].x - 0.01, x));
+  }
+  drawInstrument();
+  schedulePreview();
+});
+
+function endDrag(e) {
+  if (!dragMode) return;
+  dragMode = null;
+  dragIndex = -1;
+  if (e && e.pointerId !== undefined && curveCanvas.hasPointerCapture(e.pointerId)) curveCanvas.releasePointerCapture(e.pointerId);
+}
+curveCanvas.addEventListener('pointerup', endDrag);
+curveCanvas.addEventListener('pointercancel', endDrag);
+
+curveCanvas.addEventListener('dblclick', (e) => {
+  const { cx, cy } = curvePos(e);
+  if (cy > PLOT_H) return;
+  const lowX = valueToX(lowVal);
+  const highX = valueToX(highVal);
+  const span = Math.max(1e-6, highX - lowX);
+  const x = clamp01((cx - lowX) / span);
+  const y = clamp01(1 - cy / PLOT_H);
+  let idx = -1;
+  let best = 0.07;
+  for (let i = 1; i < curvePoints.length - 1; i++) {
+    const dist = Math.hypot(curvePoints[i].x - x, curvePoints[i].y - y);
+    if (dist < best) { best = dist; idx = i; }
+  }
+  if (idx > 0) {
+    curvePoints.splice(idx, 1);
+    drawInstrument();
+    schedulePreview();
+  }
+});
+
+$('invertBtn').addEventListener('click', () => {
+  invert = !invert;
+  $('invertBtn').setAttribute('aria-pressed', String(invert));
+  drawInstrument();
+  schedulePreview();
+});
+
+$('curveReset').addEventListener('click', () => {
+  curvePoints = [{ x: 0, y: 0 }, { x: 1, y: 1 }];
+  blackPct = 0;
+  whitePct = 100;
+  syncValsFromPct();
+  drawInstrument();
+  schedulePreview();
+});
+
+/* ---------- preset ---------- */
+
+const PRESETS = {
+  neutro: { label: 'Neutro, displacement', s: { palette: 'gray', invert: false, black: 0, white: 100, blur: 0, quality: 96, curve: [[0, 0], [1, 1]] } },
+  raggix: { label: 'Raggi X', s: { palette: 'xray', invert: true, black: 1, white: 99, blur: 1.5, quality: 94, curve: [[0, 0], [0.3, 0.06], [0.58, 0.3], [0.82, 0.72], [1, 1]] } },
+  bassorilievo: { label: 'Bassorilievo', s: { palette: 'gray', invert: false, black: 6, white: 94, blur: 0.5, quality: 98, curve: [[0, 0], [0.22, 0.08], [0.5, 0.5], [0.78, 0.92], [1, 1]] } },
+  nebbia: { label: 'Nebbia, atmosfera', s: { palette: 'gray', invert: true, black: 8, white: 92, blur: 6, quality: 90, curve: [[0, 0], [0.35, 0.52], [0.7, 0.82], [1, 1]] } },
+  termica: { label: 'Termica', s: { palette: 'thermal', invert: false, black: 2, white: 98, blur: 1, quality: 92, curve: [[0, 0], [0.5, 0.55], [1, 1]] } },
+  livelli: { label: 'Livelli, fasce piatte', s: { palette: 'gray', invert: false, black: 2, white: 98, blur: 0, quality: 100, curve: [[0, 0], [0.18, 0.02], [0.22, 0.25], [0.4, 0.27], [0.44, 0.5], [0.6, 0.52], [0.64, 0.75], [0.82, 0.77], [0.86, 1], [1, 1]] } },
+};
+
+const STORE = 'depthmap-presets-v2';
+let invert = false;
+
+function userPresets() {
+  try { return JSON.parse(localStorage.getItem(STORE) || '{}'); }
+  catch (e) { return {}; }
+}
+
+function currentSettings() {
+  return {
+    palette: controls.palette.value,
+    invert,
+    black: blackPct,
+    white: whitePct,
+    blur: Number(controls.blur.value),
+    edges: Number(controls.edges.value),
+    equalize: Number(controls.equalize.value),
+    grain: Number(controls.grain.value),
+    grainSize: Number(controls.grainSize.value),
+    quality: Number(controls.quality.value),
+    curve: curvePoints.map(p => [p.x, p.y]),
+  };
+}
+
+function applySettings(s) {
+  controls.palette.value = s.palette;
+  invert = Boolean(s.invert);
+  $('invertBtn').setAttribute('aria-pressed', String(invert));
+  blackPct = s.black;
+  whitePct = s.white;
+  syncValsFromPct();
+  controls.blur.value = String(s.blur);
+  controls.edges.value = String(s.edges ?? 0);
+  controls.equalize.value = String(s.equalize ?? 0);
+  controls.grain.value = String(s.grain ?? 0);
+  controls.grainSize.value = String(s.grainSize ?? 1);
+  controls.quality.value = String(s.quality);
+  curvePoints = s.curve.map(([x, y]) => ({ x, y }));
+  readLabels();
+  drawInstrument();
+  schedulePreview();
+}
+
+function buildPresetSelect(selected = '') {
+  const sel = $('presetSelect');
+  sel.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = 'Nessuno';
+  sel.appendChild(none);
+  const g1 = document.createElement('optgroup');
+  g1.label = 'Predefiniti';
+  for (const [key, p] of Object.entries(PRESETS)) {
+    const o = document.createElement('option');
+    o.value = 'b:' + key;
+    o.textContent = p.label;
+    g1.appendChild(o);
+  }
+  sel.appendChild(g1);
+  const mine = userPresets();
+  const names = Object.keys(mine);
+  if (names.length) {
+    const g2 = document.createElement('optgroup');
+    g2.label = 'Miei';
+    for (const n of names) {
+      const o = document.createElement('option');
+      o.value = 'u:' + n;
+      o.textContent = n;
+      g2.appendChild(o);
+    }
+    sel.appendChild(g2);
+  }
+  sel.value = selected;
+}
+
+$('presetSelect').addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!v) return;
+  const s = v.startsWith('b:') ? (PRESETS[v.slice(2)] || {}).s : userPresets()[v.slice(2)];
+  if (s) applySettings(s);
+});
+
+$('savePreset').addEventListener('click', () => {
+  const name = prompt('Nome del preset');
+  if (!name) return;
+  const mine = userPresets();
+  mine[name.trim()] = currentSettings();
+  try { localStorage.setItem(STORE, JSON.stringify(mine)); }
+  catch (e) { setStatus('Il browser non permette di salvare i preset.', 'err'); return; }
+  buildPresetSelect('u:' + name.trim());
+  setStatus(`Preset "${name.trim()}" salvato.`, 'ok');
+});
+
+$('deletePreset').addEventListener('click', () => {
+  const v = $('presetSelect').value;
+  if (!v.startsWith('u:')) { setStatus('Puoi eliminare solo i preset che hai salvato tu.'); return; }
+  const name = v.slice(2);
+  const mine = userPresets();
+  delete mine[name];
+  localStorage.setItem(STORE, JSON.stringify(mine));
+  buildPresetSelect('');
+  setStatus(`Preset "${name}" eliminato.`, 'ok');
+});
+
+/* ---------- caricamento ---------- */
+
+function loadFromSrc(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('il browser ha rifiutato la sorgente'));
+    img.src = src;
+  });
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('lettura del file non riuscita'));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Tre strade in ordine di robustezza. createImageBitmap lavora direttamente sul
+// File. Il data URL funziona anche su file://, dove i blob URL vengono rifiutati
+// perche' l'origine del documento e' null. Il blob URL resta come ultima spiaggia.
+async function decodeImage(file) {
+  const failures = [];
+  if (typeof createImageBitmap === 'function') {
+    try { return await createImageBitmap(file); }
+    catch (e) { failures.push('createImageBitmap: ' + (e.message || e)); }
+  }
+  try { return await loadFromSrc(await fileToDataUrl(file)); }
+  catch (e) { failures.push('data URL: ' + (e.message || e)); }
+  let url = null;
+  try {
+    url = URL.createObjectURL(file);
+    const img = await loadFromSrc(url);
+    URL.revokeObjectURL(url);
+    return img;
+  } catch (e) {
+    if (url) URL.revokeObjectURL(url);
+    failures.push('blob URL: ' + (e.message || e));
+  }
+  throw new Error(failures.join(' · '));
+}
+
+async function pickFile(file) {
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { setStatus('Serve un file immagine: JPG, PNG o WebP.', 'err'); return; }
+  setStatus('Apro il file.');
+  try {
+    const decoded = await decodeImage(file);
+    srcW = decoded.naturalWidth || decoded.width;
+    srcH = decoded.naturalHeight || decoded.height;
+    if (!srcW || !srcH) throw new Error('dimensioni non leggibili');
+    sourceImage = decoded;
+    sourceName = baseName(file.name);
+    const prev = fitSize(srcW, srcH, 2000);
+    sourcePreview = scaledCanvas(decoded, 0, 0, srcW, srcH, prev.w, prev.h);
+    fullDepth = null;
+    fullRefined = null;
+    proxyDepth = null;
+    proxyRefined = null;
+    depthCanvas = null;
+    histogram = null;
+    cdf = null;
+    generateBtn.disabled = embeddedBlock;
+    downloadBtn.disabled = true;
+    $('fileinfo').textContent = `${file.name} · ${srcW}×${srcH}`;
+    setView('source');
+    setProgress(0, '');
+    updateSummary();
+    if (embeddedBlock) setStatus('Immagine caricata. Per generare la depth map scarica il file e aprilo come pagina.', 'warn');
+    else setStatus('Pronto. Premi Genera depth map.');
+    drawInstrument();
+  } catch (e) {
+    const where = location.protocol === 'file:' ? '\nLa pagina gira da file://, prova a servirla da un server locale.' : '';
+    setStatus(`Non riesco a decodificare ${file.name} (${file.type || 'tipo ignoto'}, ${humanSize(file.size)}).\n${e.message}${where}`, 'err');
+  }
+}
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } });
+fileInput.addEventListener('change', (e) => pickFile(e.target.files && e.target.files[0]));
+['dragenter', 'dragover'].forEach(n => drop.addEventListener(n, (e) => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(n => drop.addEventListener(n, (e) => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', (e) => pickFile(e.dataTransfer.files && e.dataTransfer.files[0]));
+
+/* ---------- motore ---------- */
+
+function scaledCanvas(img, sx, sy, sw, sh, tw, th) {
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(tw));
+  c.height = Math.max(1, Math.round(th));
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  return c;
+}
+
+function fitSize(w, h, maxSide) {
+  const scale = Math.min(1, maxSide / Math.max(w, h));
+  return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
+}
+
+// Misura d'uscita richiesta, anche sopra la sorgente. Per la stampa serve: una
+// foto da 1500px deve poter dare una mappa da 2480px a 210mm e 300dpi. La
+// profondita' e' un campo continuo, ingrandirla non inventa dettaglio ma non
+// introduce nemmeno artefatti. Il tetto e' sui pixel totali, per la memoria.
+const MAX_OUT_PIXELS = 40e6;
+
+function targetSize(w, h, longSide) {
+  let scale = longSide / Math.max(w, h);
+  if (w * h * scale * scale > MAX_OUT_PIXELS) scale = Math.sqrt(MAX_OUT_PIXELS / (w * h));
+  return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
+}
+
+const FORCE_WASM = 'depthmap-force-wasm';
+
+// La libreria concatena le creazioni di sessione su una promise condivisa
+// (webInitChain). Se una fallisce, quella promise resta rifiutata e ogni
+// tentativo successivo rilancia lo stesso errore senza ricaricare niente: un
+// ripiego a runtime e' impossibile. Quindi il device va deciso prima, e il primo
+// tentativo deve essere quello buono.
+async function pickDevice() {
+  if (IS_SAFARI) return 'wasm';
+  try { if (localStorage.getItem(FORCE_WASM) === '1') return 'wasm'; } catch (e) { /* storage negato */ }
+  if (!('gpu' in navigator)) return 'wasm';
+  try {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) return 'wasm';
+  } catch (e) {
+    return 'wasm';
+  }
+  return 'webgpu';
+}
+
+// Un modello senza file ONNX fa fallire la creazione della sessione, e un
+// fallimento lascia rifiutata la catena di init della libreria: da li' in poi
+// serve ricaricare. Meglio chiederlo all'API prima di toccare la libreria.
+async function verifyRepo(id) {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(id)) return { ok: false, reason: 'il nome del repo non e\u2019 valido' };
+  try {
+    const res = await fetch(`https://huggingface.co/api/models/${id}`);
+    if (res.status === 404) return { ok: false, reason: 'il repo non esiste' };
+    if (!res.ok) return { ok: true };
+    const info = await res.json();
+    const files = Array.isArray(info.siblings) ? info.siblings.map(f => String(f.rfilename || '')) : [];
+    if (!files.length) return { ok: true };
+    if (!files.some(f => /\.onnx$/i.test(f))) return { ok: false, reason: 'il repo non contiene file ONNX' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: true };
+  }
+}
+
+async function getEstimator(modelId) {
+  const device = await pickDevice();
+  const key = modelId + '|' + device;
+  if (estimators.has(key)) { setProgress(30, 'modello in memoria'); return estimators.get(key); }
+  setStatus(`Preparo il modello su ${device === 'webgpu' ? 'GPU' : 'CPU'}. Al primo uso viene scaricato e messo in cache locale.`);
+  setProgress(3, 'modello');
+  const onProgress = (ev) => {
+    const raw = Number(ev && ev.progress);
+    if (Number.isFinite(raw)) setProgress(3 + (raw / 100) * 27, 'scarico modello');
+  };
+
+  const check = await verifyRepo(modelId);
+  if (!check.ok) {
+    const err = new Error(`${modelId}: ${check.reason}. Scegline un altro.`);
+    err.preflight = true;
+    throw err;
+  }
+
+  try {
+    const est = await pipeline('depth-estimation', modelId, { device, progress_callback: onProgress });
+    estimators.set(key, est);
+    refreshCacheInfo();
+    return est;
+  } catch (e) {
+    if (device === 'webgpu') {
+      try { localStorage.setItem(FORCE_WASM, '1'); } catch (err) { /* storage negato */ }
+      e.recoverable = true;
+    }
+    throw e;
+  }
+}
+
+async function predictFloat(est, canvas) {
+  const out = await est(canvas);
+  const t = out.predicted_depth;
+  const dims = t.dims;
+  const h = dims[dims.length - 2];
+  const w = dims[dims.length - 1];
+  const data = t.data instanceof Float32Array ? t.data : Float32Array.from(t.data);
+  return { data, width: w, height: h };
+}
+
+function normalize(field) {
+  let min = Infinity;
+  let max = -Infinity;
+  const d = field.data;
+  for (let i = 0; i < d.length; i++) { if (d[i] < min) min = d[i]; if (d[i] > max) max = d[i]; }
+  const span = max - min || 1;
+  for (let i = 0; i < d.length; i++) d[i] = (d[i] - min) / span;
+  return field;
+}
+
+function sampleBilinear(field, fx, fy) {
+  const { data, width, height } = field;
+  const x = Math.max(0, Math.min(width - 1.001, fx));
+  const y = Math.max(0, Math.min(height - 1.001, fy));
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = Math.min(width - 1, x0 + 1);
+  const y1 = Math.min(height - 1, y0 + 1);
+  const tx = x - x0;
+  const ty = y - y0;
+  const a = data[y0 * width + x0];
+  const b = data[y0 * width + x1];
+  const c = data[y1 * width + x0];
+  const e = data[y1 * width + x1];
+  return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + e * tx) * ty;
+}
+
+function resampleField(field, w, h) {
+  if (field.width === w && field.height === h) return field;
+  const data = new Float32Array(w * h);
+  const sx = field.width / w;
+  const sy = field.height / h;
+  for (let y = 0; y < h; y++) {
+    const fy = (y + 0.5) * sy - 0.5;
+    for (let x = 0; x < w; x++) {
+      data[y * w + x] = sampleBilinear(field, (x + 0.5) * sx - 0.5, fy);
+    }
+  }
+  return { data, width: w, height: h };
+}
+
+function boxDownsample(field, maxSide) {
+  const scale = Math.min(1, maxSide / Math.max(field.width, field.height));
+  if (scale >= 1) return field;
+  const w = Math.max(1, Math.round(field.width * scale));
+  const h = Math.max(1, Math.round(field.height * scale));
+  const data = new Float32Array(w * h);
+  const bx = field.width / w;
+  const by = field.height / h;
+  for (let y = 0; y < h; y++) {
+    const sy0 = Math.floor(y * by);
+    const sy1 = Math.min(field.height, Math.max(sy0 + 1, Math.floor((y + 1) * by)));
+    for (let x = 0; x < w; x++) {
+      const sx0 = Math.floor(x * bx);
+      const sx1 = Math.min(field.width, Math.max(sx0 + 1, Math.floor((x + 1) * bx)));
+      let sum = 0;
+      let n = 0;
+      for (let sy = sy0; sy < sy1; sy++) {
+        const row = sy * field.width;
+        for (let sx = sx0; sx < sx1; sx++) { sum += field.data[row + sx]; n++; }
+      }
+      data[y * w + x] = n ? sum / n : 0;
+    }
+  }
+  return { data, width: w, height: h };
+}
+
+const smoothstep = (t) => { const v = clamp01(t); return v * v * (3 - 2 * v); };
+
+async function runSingle(est, out) {
+  setProgress(35, 'analisi');
+  const infer = fitSize(out.w, out.h, 1536);
+  const canvas = scaledCanvas(sourceImage, 0, 0, srcW, srcH, infer.w, infer.h);
+  const field = normalize(await predictFloat(est, canvas));
+  setProgress(90, 'ricampiono');
+  return resampleField(field, out.w, out.h);
+}
+
+class Cancelled extends Error {
+  constructor() { super('interrotto'); this.cancelled = true; }
+}
+
+function formatEta(ms) {
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return sec + 's';
+  return Math.floor(sec / 60) + 'm ' + String(sec % 60).padStart(2, '0') + 's';
+}
+
+async function runTiled(est, out, grid) {
+  const overlap = 0.18;
+  const natW = srcW;
+  const natH = srcH;
+
+  setProgress(33, 'passata globale');
+  const g = fitSize(natW, natH, 512);
+  const globalField = await predictFloat(est, scaledCanvas(sourceImage, 0, 0, natW, natH, g.w, g.h));
+  const gd = globalField.data;
+  const gw = globalField.width;
+  const gh = globalField.height;
+
+  const acc = new Float32Array(out.w * out.h);
+  const wacc = new Float32Array(out.w * out.h);
+  const stepX = out.w / grid;
+  const stepY = out.h / grid;
+  const marginX = stepX * overlap;
+  const marginY = stepY * overlap;
+  const total = grid * grid;
+  let done = 0;
+  const started = performance.now();
+
+  for (let gy = 0; gy < grid; gy++) {
+    for (let gx = 0; gx < grid; gx++) {
+      if (cancelRequested) throw new Cancelled();
+
+      const x0 = Math.max(0, Math.round(gx * stepX - marginX));
+      const x1 = Math.min(out.w, Math.round((gx + 1) * stepX + marginX));
+      const y0 = Math.max(0, Math.round(gy * stepY - marginY));
+      const y1 = Math.min(out.h, Math.round((gy + 1) * stepY + marginY));
+      const boxW = x1 - x0;
+      const boxH = y1 - y0;
+
+      // Il modello ridimensiona comunque a circa 518px al suo interno, quindi dare
+      // in pasto una tela piu' grande non aggiunge dettaglio: aggiunge solo
+      // l'interpolazione che la libreria fa per riportare l'output alla misura di
+      // ingresso. Il reingrandimento lo faccio io qui sotto, dove serve.
+      const ts = Math.min(1, 518 / Math.max(boxW, boxH));
+      const eta = done > 0 ? ` · resta ${formatEta(((performance.now() - started) / done) * (total - done))}` : '';
+      setProgress(35 + (done / total) * 55, `tile ${done + 1}/${total}${eta}`);
+
+      const tile = await predictFloat(est, scaledCanvas(
+        sourceImage,
+        (x0 / out.w) * natW, (y0 / out.h) * natH,
+        (boxW / out.w) * natW, (boxH / out.h) * natH,
+        boxW * ts, boxH * ts,
+      ));
+      const td = tile.data;
+      const tw = tile.width;
+      const th = tile.height;
+
+      // Tabelle di campionamento precalcolate: nel ciclo interno non resta
+      // nessuna chiamata di funzione ne' Math.floor per pixel.
+      const cx0 = new Int32Array(boxW);
+      const cx1 = new Int32Array(boxW);
+      const ctx0 = new Float32Array(boxW);
+      const wxArr = new Float32Array(boxW);
+      const leftM = gx > 0 ? marginX * 2 : 0;
+      const rightM = gx < grid - 1 ? marginX * 2 : 0;
+      const topM = gy > 0 ? marginY * 2 : 0;
+      const botM = gy < grid - 1 ? marginY * 2 : 0;
+
+      for (let x = 0; x < boxW; x++) {
+        const fx = Math.min(tw - 1.001, (x / boxW) * tw);
+        const i0 = fx | 0;
+        cx0[x] = i0;
+        cx1[x] = i0 + 1 < tw ? i0 + 1 : tw - 1;
+        ctx0[x] = fx - i0;
+        let wx = 1;
+        if (leftM > 0) wx = Math.min(wx, smoothstep(x / leftM));
+        if (rightM > 0) wx = Math.min(wx, smoothstep((boxW - 1 - x) / rightM));
+        wxArr[x] = wx;
+      }
+
+      // Allineamento affine alla passata globale, minimi quadrati su un sottocampione.
+      let sT = 0, sG = 0, sTT = 0, sTG = 0, n = 0;
+      for (let y = 0; y < boxH; y += 4) {
+        const fy = Math.min(th - 1.001, (y / boxH) * th);
+        const j0 = fy | 0;
+        const j1 = j0 + 1 < th ? j0 + 1 : th - 1;
+        const ty = fy - j0;
+        const gyf = Math.min(gh - 1.001, ((y0 + y) / out.h) * gh);
+        const k0 = gyf | 0;
+        const k1 = k0 + 1 < gh ? k0 + 1 : gh - 1;
+        const gty = gyf - k0;
+        for (let x = 0; x < boxW; x += 4) {
+          const a0 = td[j0 * tw + cx0[x]];
+          const b0 = td[j0 * tw + cx1[x]];
+          const a1 = td[j1 * tw + cx0[x]];
+          const b1 = td[j1 * tw + cx1[x]];
+          const fx = ctx0[x];
+          const t = (a0 + (b0 - a0) * fx) * (1 - ty) + (a1 + (b1 - a1) * fx) * ty;
+
+          const gxf = Math.min(gw - 1.001, ((x0 + x) / out.w) * gw);
+          const m0 = gxf | 0;
+          const m1 = m0 + 1 < gw ? m0 + 1 : gw - 1;
+          const gtx = gxf - m0;
+          const c0 = gd[k0 * gw + m0];
+          const d0 = gd[k0 * gw + m1];
+          const c1 = gd[k1 * gw + m0];
+          const d1 = gd[k1 * gw + m1];
+          const gg = (c0 + (d0 - c0) * gtx) * (1 - gty) + (c1 + (d1 - c1) * gtx) * gty;
+
+          sT += t; sG += gg; sTT += t * t; sTG += t * gg; n++;
+        }
+      }
+      const denom = n * sTT - sT * sT;
+      let a = 1;
+      let b = 0;
+      if (Math.abs(denom) > 1e-9) {
+        a = (n * sTG - sT * sG) / denom;
+        b = (sG - a * sT) / n;
+        if (!Number.isFinite(a) || a <= 1e-6) { a = 1; b = 0; }
+      }
+
+      for (let y = 0; y < boxH; y++) {
+        let wy = 1;
+        if (topM > 0) wy = Math.min(wy, smoothstep(y / topM));
+        if (botM > 0) wy = Math.min(wy, smoothstep((boxH - 1 - y) / botM));
+        const fy = Math.min(th - 1.001, (y / boxH) * th);
+        const j0 = fy | 0;
+        const j1 = j0 + 1 < th ? j0 + 1 : th - 1;
+        const ty = fy - j0;
+        const r0 = j0 * tw;
+        const r1 = j1 * tw;
+        const row = (y0 + y) * out.w + x0;
+        for (let x = 0; x < boxW; x++) {
+          const i0 = cx0[x];
+          const i1 = cx1[x];
+          const fx = ctx0[x];
+          const top = td[r0 + i0];
+          const topR = td[r0 + i1];
+          const bot = td[r1 + i0];
+          const botR = td[r1 + i1];
+          const v = (top + (topR - top) * fx) * (1 - ty) + (bot + (botR - bot) * fx) * ty;
+          const w = wxArr[x] * wy;
+          const weight = w > 1e-4 ? w : 1e-4;
+          const idx = row + x;
+          acc[idx] += (a * v + b) * weight;
+          wacc[idx] += weight;
+        }
+      }
+      done++;
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  for (let i = 0; i < acc.length; i++) acc[i] = wacc[i] > 0 ? acc[i] / wacc[i] : 0;
+  setProgress(92, 'normalizzo');
+  return normalize({ data: acc, width: out.w, height: out.h });
+}
+
+// L'istogramma del grafico ha 160 intervalli, che bastano per disegnarlo ma non
+// per costruire la curva di equalizzazione: sulla fascia delle montagne ne
+// cadevano solo 12, e tra un punto e l'altro la curva tracciava segmenti dritti.
+// Erano quelle faccette a sembrare sgranatura.
+//
+// Qui ne uso 1024, e li liscio: senza lisciatura un istogramma cosi' fine
+// diventa frastagliato e il rimedio peggiora il male.
+const EQ_BINS = 1024;
+let eqHistogram = null;
+
+function computeEqHistogram(field) {
+  const raw = new Float64Array(EQ_BINS);
+  const d = field.data;
+  for (let i = 0; i < d.length; i++) raw[Math.floor(clamp01(d[i]) * (EQ_BINS - 1))]++;
+
+  // lisciatura gaussiana, tre passate di media mobile
+  const R = 6;
+  let a = raw;
+  let b = new Float64Array(EQ_BINS);
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < EQ_BINS; i++) {
+      let sum = 0;
+      for (let k = -R; k <= R; k++) {
+        const j = i + k;
+        sum += a[j < 0 ? 0 : j >= EQ_BINS ? EQ_BINS - 1 : j];
+      }
+      b[i] = sum / (2 * R + 1);
+    }
+    const t = a; a = b; b = t;
+  }
+  eqHistogram = a;
+}
+
+function computeHistogram(field) {
+  const bins = 160;
+  const hist = new Float32Array(bins);
+  const d = field.data;
+  for (let i = 0; i < d.length; i++) hist[Math.floor(clamp01(d[i]) * (bins - 1))]++;
+  histogram = hist;
+  const c = new Float32Array(bins);
+  let acc = 0;
+  for (let i = 0; i < bins; i++) { acc += hist[i]; c[i] = acc / d.length; }
+  cdf = c;
+}
+
+generateBtn.addEventListener('click', async () => {
+  if (busy) {
+    cancelRequested = true;
+    setStatus('Interrompo appena finisce il tile in corso.');
+    return;
+  }
+  if (!sourceImage || embeddedBlock) return;
+  busy = true;
+  cancelRequested = false;
+  generateBtn.textContent = 'Interrompi';
+  try {
+    const est = await getEstimator(controls.modelSelect.value);
+    setStatus('Analisi in corso. Non chiudere la pagina.');
+    const out = targetSize(srcW, srcH, outputLongSide());
+    const grid = Number(controls.detail.value);
+    fullDepth = grid > 1 ? await runTiled(est, out, grid) : await runSingle(est, out);
+    setProgress(94, 'raffino i contorni');
+    await new Promise(r => setTimeout(r, 0));
+    try {
+      const guide = buildGuide(fullDepth.width, fullDepth.height);
+      const radius = Math.max(4, Math.min(32, Math.round(Math.max(fullDepth.width, fullDepth.height) / 128)));
+      fullRefined = guidedRefine(fullDepth, guide, radius, 1e-4);
+    } catch (e) {
+      console.warn('raffinamento non riuscito, uso la mappa grezza', e);
+      fullRefined = null;
+    }
+    proxyDepth = boxDownsample(fullDepth, 1400);
+    proxyRefined = fullRefined ? boxDownsample(fullRefined, 1400) : null;
+    computeHistogram(proxyDepth);
+    computeEqHistogram(fullDepth);
+    syncValsFromPct();
+    downloadBtn.disabled = false;
+    setProgress(100, '');
+    setStatus(`Depth map pronta, ${fullDepth.width}×${fullDepth.height} px.`, 'ok');
+    drawInstrument();
+    renderPreview();
+    setView('depth');
+  } catch (e) {
+    if (e && e.cancelled) {
+      setStatus('Interrotto.');
+      setProgress(0, '');
+    } else {
+      console.error(e);
+      const stack = (e && e.stack ? String(e.stack) : '').split('\n').slice(0, 3).join('\n');
+      console.error('diagnostica:', envReport(), '\n', stack);
+      // Dopo un fallimento la catena di init della libreria resta rifiutata,
+      // quindi qualsiasi nuovo tentativo in questa pagina darebbe lo stesso errore.
+      const hint = e && e.preflight ? '' : e && e.recoverable
+        ? '\nLa GPU non e\u2019 utilizzabile qui. Ricarica la pagina: al prossimo avvio uso la CPU.'
+        : '\nRicarica la pagina prima di riprovare.';
+      setStatus(`Elaborazione fallita: ${e && e.message ? e.message : e}${hint}\n\n${envReport()}\n${stack}`, 'err');
+      setProgress(0, '');
+    }
+  } finally {
+    busy = false;
+    cancelRequested = false;
+    generateBtn.textContent = 'Genera depth map';
+    generateBtn.disabled = embeddedBlock;
+  }
+});
+
+/* ---------- resa ---------- */
+
+// Sfocatura fatta a mano sul campo di profondita', non sul canvas. Tre motivi:
+// ctx.filter non e' disponibile ovunque e fallisce in silenzio; sfocare i valori
+// di profondita' prima della mappatura evita di mescolare colori della palette;
+// e cosi' il raggio si puo' riscalare sull'anteprima, che altrimenti mostrerebbe
+// una sfocatura diversa da quella del file esportato.
+function boxesForGauss(sigma, n) {
+  const wIdeal = Math.sqrt((12 * sigma * sigma / n) + 1);
+  let wl = Math.floor(wIdeal);
+  if (wl % 2 === 0) wl--;
+  const wu = wl + 2;
+  const mIdeal = (12 * sigma * sigma - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4);
+  const m = Math.round(mIdeal);
+  const sizes = [];
+  for (let i = 0; i < n; i++) sizes.push(((i < m ? wl : wu) - 1) / 2);
+  return sizes;
+}
+
+function boxBlurH(src, dst, w, h, r) {
+  if (r < 1) { dst.set(src); return; }
+  const norm = 1 / (2 * r + 1);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let acc = 0;
+    for (let i = -r; i <= r; i++) acc += src[row + Math.min(w - 1, Math.max(0, i))];
+    for (let x = 0; x < w; x++) {
+      dst[row + x] = acc * norm;
+      acc += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
+    }
+  }
+}
+
+function boxBlurV(src, dst, w, h, r) {
+  if (r < 1) { dst.set(src); return; }
+  const norm = 1 / (2 * r + 1);
+  for (let x = 0; x < w; x++) {
+    let acc = 0;
+    for (let i = -r; i <= r; i++) acc += src[Math.min(h - 1, Math.max(0, i)) * w + x];
+    for (let y = 0; y < h; y++) {
+      dst[y * w + x] = acc * norm;
+      acc += src[Math.min(h - 1, y + r + 1) * w + x] - src[Math.max(0, y - r) * w + x];
+    }
+  }
+}
+
+function blurField(field, sigma) {
+  if (!(sigma > 0.3)) return field;
+  const { width: w, height: h } = field;
+  let a = Float32Array.from(field.data);
+  let b = new Float32Array(w * h);
+  for (const r of boxesForGauss(sigma, 3)) {
+    boxBlurH(a, b, w, h, r);
+    boxBlurV(b, a, w, h, r);
+  }
+  return { data: a, width: w, height: h };
+}
+
+// Rumore di valore su reticolo, con seme fisso e coordinate espresse nei pixel
+// del file finale. Due conseguenze: l'anteprima mostra la stessa grana che
+// esporterai, e due esportazioni di fila sono identiche byte per byte.
+const GRAIN_SEED = 0x9e3779b9 | 0;
+
+function hash2(x, y) {
+  let h = Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + GRAIN_SEED;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h = h ^ (h >>> 16);
+  return (h >>> 0) / 4294967295;
+}
+
+// Cella da 1px: rumore bianco, come Aggiungi disturbo di Photoshop. Sopra 1px il
+// valore viene interpolato tra i nodi del reticolo con smoothstep, quindi la
+// grana ha una dimensione leggibile e resta coerente invece di sfarfallare.
+function grainAt(x, y, cell) {
+  if (cell <= 1) return hash2(x, y);
+  const gx = x / cell;
+  const gy = y / cell;
+  const ix = Math.floor(gx);
+  const iy = Math.floor(gy);
+  const fx = gx - ix;
+  const fy = gy - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy);
+  const b = hash2(ix + 1, iy);
+  const c = hash2(ix, iy + 1);
+  const d = hash2(ix + 1, iy + 1);
+  return (a + (b - a) * ux) * (1 - uy) + (c + (d - c) * ux) * uy;
+}
+
+// Filtro guidato, versione veloce. Il modello vede l'immagine a circa 518px,
+// quindi i contorni della profondita' escono sfocati e spostati rispetto a
+// quelli della foto. Questo filtro usa la foto come riferimento: dove la foto ha
+// un bordo netto obbliga la profondita' a esserlo nello stesso punto, dove la
+// foto e' uniforme non tocca nulla.
+//
+// I coefficienti si calcolano su una copia ridotta e si applicano a piena
+// risoluzione: stesso risultato, memoria e tempo molto minori.
+function boxMean(src, dst, tmp, w, h, r) {
+  boxBlurH(src, tmp, w, h, r);
+  boxBlurV(tmp, dst, w, h, r);
+}
+
+function guidedRefine(depth, guide, radius, eps) {
+  const W = depth.width;
+  const H = depth.height;
+  const small = Math.min(1, 1024 / Math.max(W, H));
+  const sw = Math.max(8, Math.round(W * small));
+  const sh = Math.max(8, Math.round(H * small));
+  const r = Math.max(2, Math.round(radius * small));
+
+  const p = resampleField(depth, sw, sh).data;
+  const I = resampleField({ data: guide, width: W, height: H }, sw, sh).data;
+  const n = sw * sh;
+  const Ip = new Float32Array(n);
+  const II = new Float32Array(n);
+  for (let i = 0; i < n; i++) { Ip[i] = I[i] * p[i]; II[i] = I[i] * I[i]; }
+
+  const tmp = new Float32Array(n);
+  const mI = new Float32Array(n);
+  const mP = new Float32Array(n);
+  const mIp = new Float32Array(n);
+  const mII = new Float32Array(n);
+  boxMean(I, mI, tmp, sw, sh, r);
+  boxMean(p, mP, tmp, sw, sh, r);
+  boxMean(Ip, mIp, tmp, sw, sh, r);
+  boxMean(II, mII, tmp, sw, sh, r);
+
+  const a = new Float32Array(n);
+  const b = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const cov = mIp[i] - mI[i] * mP[i];
+    const varI = mII[i] - mI[i] * mI[i];
+    const ai = cov / (varI + eps);
+    a[i] = ai;
+    b[i] = mP[i] - ai * mI[i];
+  }
+  const mA = new Float32Array(n);
+  const mB = new Float32Array(n);
+  boxMean(a, mA, tmp, sw, sh, r);
+  boxMean(b, mB, tmp, sw, sh, r);
+
+  const aFull = resampleField({ data: mA, width: sw, height: sh }, W, H).data;
+  const bFull = resampleField({ data: mB, width: sw, height: sh }, W, H).data;
+  const out = new Float32Array(W * H);
+  for (let i = 0; i < out.length; i++) out[i] = aFull[i] * guide[i] + bFull[i];
+  return { data: out, width: W, height: H };
+}
+
+// luminanza della sorgente alla misura della mappa, serve come riferimento
+function buildGuide(w, h) {
+  const c = scaledCanvas(sourceImage, 0, 0, srcW, srcH, w, h);
+  const px = c.getContext('2d').getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < g.length; i++) {
+    const j = i * 4;
+    g[i] = (0.2126 * px[j] + 0.7152 * px[j + 1] + 0.0722 * px[j + 2]) / 255;
+  }
+  return g;
+}
+
+// La curva e' una tabella di 256 voci, ma la profondita' e' in virgola mobile.
+// Arrotondando all'indice piu' vicino si buttavano via tutti i valori intermedi:
+// una fascia stretta espansa dalla curva usciva a scalini invece che sfumata.
+// Interpolando tra due voci la precisione del campo originale si conserva.
+function sampleCurve(lut, t) {
+  const p = clamp01(t) * 255;
+  const j = p | 0;
+  const f = p - j;
+  const a = lut[j];
+  const b = lut[j + 1 < 256 ? j + 1 : 255];
+  return a + (b - a) * f;
+}
+
+function renderField(field) {
+  // Il cursore esprime pixel del file finale: sull'anteprima ridotta il raggio
+  // va riscalato, altrimenti quello che vedi non e' quello che esporti.
+  const blurPx = Number(controls.blur.value);
+  const scale = fullDepth && fullDepth.width ? field.width / fullDepth.width : 1;
+
+  // Il cursore Contorni fonde la mappa grezza con quella raffinata, cosi' puoi
+  // dosarlo senza rifare l'inferenza.
+  const edgeMix = Number(controls.edges.value) / 100;
+  const refined = field === fullDepth ? fullRefined : field === proxyDepth ? proxyRefined : null;
+  let base = field;
+  if (edgeMix > 0 && refined && refined.data.length === field.data.length) {
+    const mixed = new Float32Array(field.data.length);
+    for (let i = 0; i < mixed.length; i++) {
+      mixed[i] = field.data[i] + (refined.data[i] - field.data[i]) * edgeMix;
+    }
+    base = { data: mixed, width: field.width, height: field.height };
+  }
+  const work = blurPx > 0 ? blurField(base, blurPx * scale) : base;
+  const low = lowVal;
+  const span = Math.max(1e-6, highVal - lowVal);
+  // L'equalizzazione agisce PRIMA della curva manuale, cosi' i due controlli si
+  // sommano invece di combattersi: la curva disegnata a mano continua a fare
+  // quello che ci si aspetta anche a equalizzazione attiva.
+  let curve = buildCurveLut();
+  const eqAmt = Number(controls.equalize.value) / 100;
+  if (eqAmt > 0) {
+    const eq = buildEqualizeLut(eqClipFor(eqAmt));
+    if (eq) {
+      const combined = new Float32Array(256);
+      for (let i = 0; i < 256; i++) {
+        const t = (i / 255) * (1 - eqAmt) + eq[i] * eqAmt;
+        const pos = clamp01(t) * 255;
+        const j = Math.floor(pos);
+        const f = pos - j;
+        const a = curve[j];
+        const b = curve[Math.min(255, j + 1)];
+        combined[i] = a + (b - a) * f;
+      }
+      curve = combined;
+    }
+  }
+  const pal = paletteLut(controls.palette.value);
+  const { width, height } = field;
+  const data = work.data;
+  const imageData = new ImageData(width, height);
+  const dst = imageData.data;
+
+  // La grana perturba il livello tonale prima della lettura della palette, non i
+  // canali RGB dopo: resta monocromatica rispetto alla rampa invece di sporcare
+  // i colori, e su scala di grigi si comporta esattamente come la grana classica.
+  const grainAmt = Number(controls.grain.value);
+  const grainCell = Number(controls.grainSize.value);
+  const outScale = scale > 0 ? 1 / scale : 1;
+  // L'interpolazione tra i nodi del reticolo riduce la varianza, quindi a parita'
+  // di cursore una grana larga risulterebbe piu' debole. Compenso, cosi' la
+  // percentuale indica sempre la stessa forza.
+  const cellGain = grainCell > 1 ? 1.6 - 0.6 / grainCell : 1;
+  const amp = (grainAmt / 100) * 80 * cellGain;
+
+  if (grainAmt <= 0) {
+    for (let i = 0; i < data.length; i++) {
+      let t = clamp01((data[i] - low) / span);
+      if (invert) t = 1 - t;
+      const v = Math.round(sampleCurve(curve, t) * 255);
+      const j = i * 4;
+      dst[j] = pal[v * 3];
+      dst[j + 1] = pal[v * 3 + 1];
+      dst[j + 2] = pal[v * 3 + 2];
+      dst[j + 3] = 255;
+    }
+  } else {
+    for (let y = 0; y < height; y++) {
+      const ny = y * outScale;
+      const row = y * width;
+      for (let x = 0; x < width; x++) {
+        const i = row + x;
+        let t = clamp01((data[i] - low) / span);
+        if (invert) t = 1 - t;
+        let v = sampleCurve(curve, t) * 255 + (grainAt(x * outScale, ny, grainCell) - 0.5) * 2 * amp;
+        v = v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+        const j = i * 4;
+        dst[j] = pal[v * 3];
+        dst[j + 1] = pal[v * 3 + 1];
+        dst[j + 2] = pal[v * 3 + 2];
+        dst[j + 3] = 255;
+      }
+    }
+  }
+
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = height;
+  out.getContext('2d').putImageData(imageData, 0, 0);
+  return out;
+}
+
+function renderPreview() {
+  if (!proxyDepth) return;
+  depthCanvas = renderField(proxyDepth);
+  if (view === 'depth') paintView();
+}
+
+function paintView() {
+  viewport.innerHTML = '';
+  if (view === 'source' && sourcePreview) {
+    sourcePreview.className = 'fade';
+    viewport.appendChild(sourcePreview);
+    $('dims').textContent = `${srcW} × ${srcH}`;
+    return;
+  }
+  if (view === 'depth' && depthCanvas) {
+    depthCanvas.className = 'fade';
+    viewport.appendChild(depthCanvas);
+    $('dims').textContent = `anteprima ${depthCanvas.width} × ${depthCanvas.height} · file ${fullDepth.width} × ${fullDepth.height}`;
+    return;
+  }
+  const span = document.createElement('span');
+  span.className = 'empty';
+  span.textContent = sourceImage ? 'nessuna depth map' : 'nessuna immagine';
+  viewport.appendChild(span);
+  $('dims').textContent = '';
+}
+
+function setView(next) {
+  view = next;
+  $('viewDepth').setAttribute('aria-pressed', String(next === 'depth'));
+  $('viewSource').setAttribute('aria-pressed', String(next === 'source'));
+  paintView();
+}
+
+$('viewDepth').addEventListener('click', () => setView('depth'));
+$('viewSource').addEventListener('click', () => setView('source'));
+
+function schedulePreview() {
+  if (!proxyDepth) return;
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(renderPreview, 110);
+}
+
+const UNIT_KEY = 'depthmap-unit-v1';
+let sizeUnit = 'px';
+
+const dpiValue = () => Math.min(1200, Math.max(72, Number(controls.dpi.value) || 300));
+const mmToPx = (mm, dpi) => Math.round((mm / 25.4) * dpi);
+const pxToMm = (px, dpi) => (px / dpi) * 25.4;
+
+// Il motore ragiona solo in pixel. I millimetri sono una vista su quel numero,
+// non un percorso di calcolo diverso: si convertono qui e basta.
+function outputLongSide() {
+  const raw = Number(controls.outSize.value) || 0;
+  const px = sizeUnit === 'mm' ? mmToPx(raw, dpiValue()) : Math.round(raw);
+  return Math.min(8000, Math.max(256, px));
+}
+
+function setUnit(next, convert) {
+  if (next === sizeUnit) return;
+  const dpi = dpiValue();
+  const raw = Number(controls.outSize.value) || 0;
+  if (convert && raw > 0) {
+    controls.outSize.value = next === 'mm'
+      ? String(Math.round(pxToMm(raw, dpi) * 10) / 10)
+      : String(mmToPx(raw, dpi));
+  }
+  sizeUnit = next;
+  controls.outSize.step = next === 'mm' ? '0.5' : '1';
+  controls.outSize.min = next === 'mm' ? '20' : '256';
+  controls.outSize.max = next === 'mm' ? '2000' : '8000';
+  $('outUnit').textContent = next;
+  $('unitPx').setAttribute('aria-pressed', String(next === 'px'));
+  $('unitMm').setAttribute('aria-pressed', String(next === 'mm'));
+  try { localStorage.setItem(UNIT_KEY, next); } catch (e) { /* storage negato */ }
+  updateSummary();
+}
+
+// Dice la conseguenza delle scelte fatte sopra: quante inferenze, che misura in
+// pixel e che misura fisica alla risoluzione scelta.
+// I tile aiutano su un soggetto ravvicinato e pieno di dettaglio, ma su una
+// scena ampia peggiorano: ogni riquadro viene normalizzato sul proprio
+// intervallo e il riallineamento non recupera del tutto. Meglio dirlo qui che
+// lasciarlo scoprire a chi usa il tool.
+function updateDetailNote() {
+  const el = $('detailNote');
+  el.textContent = Number(controls.detail.value) > 1
+    ? 'Piu\u2019 dettaglio fine, ma su paesaggi e scene ampie il risultato peggiora.'
+    : '';
+}
+
+function updateSummary() {
+  const el = $('summary');
+  if (!srcW) { el.textContent = 'nessuna immagine'; return; }
+  const grid = Number(controls.detail.value);
+  const out = targetSize(srcW, srcH, outputLongSide());
+  const passes = grid > 1 ? grid * grid + 1 : 1;
+  const dpi = dpiValue();
+  const heavy = out.w * out.h > 12e6 ? ' · file pesante' : '';
+  el.textContent = `${passes} ${passes === 1 ? 'inferenza' : 'inferenze'} · ${out.w} × ${out.h} px · `
+    + `${pxToMm(out.w, dpi).toFixed(0)} × ${pxToMm(out.h, dpi).toFixed(0)} mm a ${dpi} dpi${heavy}`;
+}
+
+function readLabels() {
+  $('blurVal').textContent = `${controls.blur.value} px`;
+  $('edgesVal').textContent = `${controls.edges.value}%`;
+  $('equalizeVal').textContent = `${controls.equalize.value}%`;
+  $('grainVal').textContent = `${controls.grain.value}%`;
+  $('grainSizeVal').textContent = `${controls.grainSize.value} px`;
+  $('qualityVal').textContent = `${controls.quality.value}%`;
+}
+
+controls.detail.addEventListener('change', () => { updateSummary(); updateDetailNote(); });
+controls.outSize.addEventListener('input', updateSummary);
+controls.dpi.addEventListener('input', updateSummary);
+$('unitPx').addEventListener('click', () => setUnit('px', true));
+$('unitMm').addEventListener('click', () => setUnit('mm', true));
+controls.edges.addEventListener('input', () => { readLabels(); schedulePreview(); });
+controls.equalize.addEventListener('input', () => { readLabels(); drawInstrument(); schedulePreview(); });
+controls.blur.addEventListener('input', () => { readLabels(); schedulePreview(); });
+controls.grain.addEventListener('input', () => { readLabels(); schedulePreview(); });
+controls.grainSize.addEventListener('input', () => { readLabels(); schedulePreview(); });
+controls.quality.addEventListener('input', readLabels);
+controls.palette.addEventListener('change', () => { drawInstrument(); schedulePreview(); });
+
+// Senza questo, un JPEG da canvas nasce a 72 dpi e InDesign o Photoshop lo
+// piazzano alla misura fisica sbagliata. Il segmento APP0 JFIF sta subito dopo
+// il SOI e ha offset fissi: unita' a 13, Xdensity a 14-15, Ydensity a 16-17.
+function setJpegDensity(buffer, dpi) {
+  const b = new Uint8Array(buffer);
+  const isJfif = b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF && b[3] === 0xE0
+    && b[6] === 0x4A && b[7] === 0x46 && b[8] === 0x49 && b[9] === 0x46 && b[10] === 0x00;
+  if (!isJfif) return { buffer, written: false };
+  b[13] = 1;
+  b[14] = (dpi >> 8) & 255;
+  b[15] = dpi & 255;
+  b[16] = (dpi >> 8) & 255;
+  b[17] = dpi & 255;
+  return { buffer: b.buffer, written: true };
+}
+
+downloadBtn.addEventListener('click', async () => {
+  if (!fullDepth || busy) return;
+  busy = true;
+  downloadBtn.disabled = true;
+  setStatus('Preparo il JPG a piena risoluzione.');
+  try {
+    await new Promise(r => setTimeout(r, 20));
+    const canvas = renderField(fullDepth);
+    const blob = await new Promise((res, rej) => {
+      canvas.toBlob(b => b ? res(b) : rej(new Error('canvas vuoto')), 'image/jpeg', Number(controls.quality.value) / 100);
+    });
+    const dpi = dpiValue();
+    const patched = setJpegDensity(await blob.arrayBuffer(), dpi);
+    const finalBlob = new Blob([patched.buffer], { type: 'image/jpeg' });
+    const url = URL.createObjectURL(finalBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${sourceName}-depth.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    const mm = `${pxToMm(canvas.width, dpi).toFixed(0)} × ${pxToMm(canvas.height, dpi).toFixed(0)} mm`;
+    setStatus(patched.written
+      ? `Salvato ${canvas.width}×${canvas.height} px a ${dpi} dpi, cioe' ${mm}. ${humanSize(finalBlob.size)}.`
+      : `Salvato ${canvas.width}×${canvas.height} px, ${humanSize(finalBlob.size)}. Densita' di stampa non scrivibile su questo browser.`, 'ok');
+  } catch (e) {
+    setStatus('Esportazione fallita: ' + (e && e.message ? e.message : e), 'err');
+  } finally {
+    busy = false;
+    downloadBtn.disabled = false;
+  }
+});
+
+$('clearCache').addEventListener('click', async () => {
+  try {
+    await idb('files', 'readwrite', s => { s.clear(); return null; });
+    await idb('meta', 'readwrite', s => { s.clear(); return null; });
+    estimators.clear();
+    try { localStorage.removeItem(FORCE_WASM); } catch (e) { /* storage negato */ }
+    await refreshCacheInfo();
+    setStatus('Cache svuotata e ripiego su CPU azzerato. Il prossimo uso riscarica il modello e riprova la GPU.', 'ok');
+  } catch (e) {
+    setStatus('Non riesco a svuotare la cache.', 'err');
+  }
+});
+
+// Se IndexedDB non accetta un ArrayBuffer (contesto file://, modalita' privata,
+// storage negato) meglio scoprirlo subito e spegnere la cache, invece di lasciare
+// che l'errore emerga a meta' del caricamento del modello.
+async function selfTestCache() {
+  try {
+    await idb('files', 'readwrite', s2 => s2.put({ buffer: new ArrayBuffer(8), type: 'selftest' }, '__selftest__'));
+    await idb('files', 'readwrite', s2 => s2.delete('__selftest__'));
+  } catch (e) {
+    env.useCustomCache = false;
+    env.customCache = null;
+    $('cacheInfo').textContent = 'cache non disponibile';
+    console.warn('cache disattivata:', e.name, e.message);
+  }
+}
+
+// In un'anteprima incorporata (iframe srcdoc, protocollo about:) l'origine e'
+// opaca: niente IndexedDB, niente memoria condivisa, e il bridge dell'host prova
+// a clonare oggetti che WebKit rifiuta. Meglio dirlo prima di far scaricare
+// cento megabyte di modello per poi fallire.
+const EMBEDDED = location.protocol === 'about:' || location.protocol === 'blob:';
+const FRAMED = (() => { try { return window.top !== window.self; } catch (e) { return true; } })();
+
+// Caricare e vedere l'immagine funziona anche qui: si blocca solo il calcolo.
+if (EMBEDDED) {
+  embeddedBlock = true;
+  setStatus('Anteprima incorporata: puoi caricare e vedere l\u2019immagine, ma il motore di calcolo non puo\u2019 girare qui.\nScarica il file e aprilo come pagina per generare la depth map.', 'warn');
+} else {
+  if (FRAMED) console.warn('la pagina gira dentro un iframe: se il modello non parte, aprila in una scheda dedicata');
+  selfTestCache();
+}
+// Elenco modelli dall'API pubblica di Hugging Face, filtrato per compito e per
+// libreria. Nessuna chiave, nessun dato inviato: e' una GET con dei parametri.
+
+// I nomi dei repo non dicono nulla a chi non segue la letteratura, quindi li
+// classifico per famiglia. La distinzione che conta e' relativa contro metrica:
+// la prima da' solo l'ordine di profondita', ed e' quella che serve per
+// displacement e maschere; la seconda stima distanze in unita' reali, ma solo
+// dentro il dominio su cui e' stata addestrata.
+const FAMILIES = [
+  {
+    key: 'v2metric',
+    test: /depth[-_]?anything.*metric|metric.*depth[-_]?anything/i,
+    kind: 'metrica',
+    label: 'Depth Anything metrica · distanze reali',
+    text: 'Variante metrica di Depth Anything: restituisce distanze in unita\u2019 reali invece del solo ordine. Tarata su interni oppure su esterni, a seconda della versione.',
+  },
+  {
+    key: 'v2',
+    test: /depth[-_]?anything[-_.]?v2|dav2/i,
+    kind: 'relativa',
+    label: 'Depth Anything v2 · relativa',
+    text: 'Il riferimento attuale su foto generiche. Bordi netti e pochi errori sui piani. Se non sai quale scegliere, questa.',
+  },
+  {
+    key: 'v1',
+    test: /depth[-_]?anything/i,
+    kind: 'relativa',
+    label: 'Depth Anything v1 · relativa',
+    text: 'Generazione precedente. Transizioni piu\u2019 morbide e bordi meno definiti della v2.',
+  },
+  {
+    key: 'marigold',
+    test: /marigold/i,
+    kind: 'relativa',
+    label: 'Diffusione · relativa',
+    text: 'Basata su diffusione. Molto dettagliata e molto lenta: richiede piu\u2019 passaggi per immagine.',
+  },
+  {
+    key: 'metric',
+    test: /zoe|metric3d|depth[-_]?pro|unidepth|metric/i,
+    kind: 'metrica',
+    label: 'Metriche · distanze reali',
+    text: 'Stima distanze in unita\u2019 reali, non solo l\u2019ordine di profondita\u2019. Modelli grossi e lenti, utili solo se ti serve una scala vera.',
+  },
+  {
+    key: 'glpn',
+    test: /glpn/i,
+    kind: 'metrica',
+    label: 'GLPN · metrica, dominio ristretto',
+    text: 'Addestrata su interni (NYU) o su strade (KITTI). Dentro quel dominio e\u2019 precisa, fuori sbanda parecchio.',
+  },
+  {
+    key: 'dpt',
+    test: /midas|dpt/i,
+    kind: 'relativa',
+    label: 'MiDaS / DPT · relativa',
+    text: 'L\u2019architettura storica. Resa molto morbida, a passaggi graduali: comoda per nebbie e atmosfere, meno per i bordi.',
+  },
+];
+
+const UNKNOWN_FAMILY = {
+  key: 'other',
+  kind: 'non classificato',
+  label: 'Altri',
+  text: 'Non rientra in nessuna famiglia che conosco: non so cosa aspettarmi.',
+};
+
+function familyOf(id) {
+  for (const f of FAMILIES) if (f.test.test(id)) return f;
+  return UNKNOWN_FAMILY;
+}
+
+function weightOf(id) {
+  if (/tiny|small|[-_]s[-_]/i.test(id)) return { rank: 0, word: 'leggero' };
+  if (/base|medium|[-_]b[-_]/i.test(id)) return { rank: 1, word: 'medio' };
+  if (/large|giant|huge|[-_]l[-_]/i.test(id)) return { rank: 2, word: 'pesante' };
+  return { rank: 1, word: 'peso ignoto' };
+}
+
+function updateModelNote() {
+  const f = familyOf(controls.modelSelect.value);
+  const w = weightOf(controls.modelSelect.value);
+  const note = $('modelNote');
+  note.innerHTML = '';
+  const strong = document.createElement('b');
+  strong.textContent = `${f.kind} · ${w.word}. `;
+  note.appendChild(strong);
+  note.appendChild(document.createTextNode(f.text));
+}
+
+controls.modelSelect.addEventListener('change', updateModelNote);
+
+// L'elenco automatico da Hugging Face e' stato rimosso: proponeva repo che il
+// browser non puo' eseguire. Qui restano solo modelli provati. Ripulisco anche
+// l'elenco salvato dalle versioni precedenti.
+try { localStorage.removeItem('depthmap-models-v1'); } catch (e) { /* storage negato */ }
+
+buildPresetSelect('');
+readLabels();
+updateModelNote();
+try {
+  if (localStorage.getItem(UNIT_KEY) === 'mm') setUnit('mm', true);
+} catch (e) { /* storage negato */ }
+updateSummary();
+updateDetailNote();
+drawInstrument();
+paintView();
+refreshCacheInfo();
+</script>
+</body>
+</html>
