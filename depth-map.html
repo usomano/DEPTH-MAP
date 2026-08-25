@@ -244,8 +244,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Secondo livello: rifiniture, non decisioni. Rientro con filo verticale,
-     etichette in mono piu' piccole, controlli meno alti. */
   .sub {
     display: flex;
     flex-direction: column;
@@ -583,8 +581,6 @@
 <script type="module">
 import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
 
-/* ---------- cache modelli su IndexedDB ---------- */
-
 const DB_NAME = 'depthmap-model-cache';
 let dbPromise = null;
 
@@ -671,11 +667,6 @@ const IS_SAFARI = typeof navigator !== 'undefined'
   && /Apple/.test(navigator.vendor || '')
   && !/CriOS|FxiOS|Chrome|Chromium|Edg/.test(navigator.userAgent);
 
-// I thread wasm hanno bisogno di memoria condivisa, e la memoria condivisa si
-// puo' passare a un worker solo se la pagina e' cross-origin isolated. Se non lo
-// e', il postMessage della SharedArrayBuffer fallisce: su WebKit con
-// DataCloneError. SharedArrayBuffer puo' esistere lo stesso, quindi non basta
-// controllare quello: l'unico test affidabile e' crossOriginIsolated.
 const CAN_THREAD = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated === true;
 
 if (env.backends && env.backends.onnx && env.backends.onnx.wasm) {
@@ -735,8 +726,6 @@ async function refreshCacheInfo() {
   }
 }
 
-/* ---------- riferimenti ---------- */
-
 const $ = (id) => document.getElementById(id);
 const drop = $('drop');
 const fileInput = $('fileInput');
@@ -774,9 +763,7 @@ let proxyRefined = null;
 let depthCanvas = null;
 let histogram = null;
 let cdf = null;
-// Nessun taglio di partenza. I valori estremi di una depth map non sono pixel
-// spuri da scartare come in fotografia: sono il punto piu' lontano e quello piu'
-// vicino della scena. Chi li vuole tagliare sposta le maniglie.
+
 let blackPct = 0;
 let whitePct = 100;
 let lowVal = 0;
@@ -805,19 +792,6 @@ function baseName(name) {
   return (name || 'depth-map').replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'depth-map';
 }
 
-/* ---------- curva ---------- */
-
-// Espansione automatica della lontananza. In un paesaggio le cose lontane
-// occupano molti pixel ma pochissimi livelli, perche' sono davvero tutte quasi
-// alla stessa distanza. Questa curva ridistribuisce i livelli in proporzione a
-// quanti pixel contiene ogni fascia, quindi apre le zone affollate.
-//
-// L'equalizzazione pura pero' amplifica il rumore dove l'istogramma ha un picco:
-// sulla foto di prova arrivava a 10 volte, per via del cielo tutto a zero.
-// Limito la pendenza redistribuendo l'eccesso, come si fa nel CLAHE.
-// Il limite di pendenza cresce col cursore: a meta' corsa resta prudente, a
-// fondo corsa lascia lavorare l'equalizzazione quasi per intero. Con la curva
-// letta per interpolazione la sgranatura non e' piu' il fattore limitante.
 function eqClipFor(amount) {
   return 1.5 + amount * 10.5;
 }
@@ -907,8 +881,6 @@ function buildCurveLut() {
   return lut;
 }
 
-/* ---------- palette ---------- */
-
 const RAMPS = {
   gray: [[0, '#000000'], [1, '#ffffff']],
   xray: [[0, '#04070d'], [0.22, '#0a2432'], [0.48, '#13596f'], [0.72, '#5fb4cd'], [0.9, '#c6e9f4'], [1, '#f4fcff']],
@@ -941,8 +913,6 @@ function paletteLut(name) {
   return lut;
 }
 
-/* ---------- strumento: istogramma, curva, tagli, rampa ---------- */
-
 const curveCanvas = $('curve');
 const cctx = curveCanvas.getContext('2d');
 const CW = 660;
@@ -955,11 +925,6 @@ let dragIndex = -1;
 
 function valueToX(v) { return v * CW; }
 
-// Le due maniglie misurano cose diverse, e vanno lette di conseguenza.
-// Il punto nero dice quanti pixel vengono schiacciati sul nero, cioe' quelli
-// STRETTAMENTE sotto la soglia: a fondo corsa deve leggere 0%. Il punto bianco
-// dice fin dove arriva il segnale conservato, quindi include l'intervallo in cui
-// cade: a fondo corsa deve leggere 100%.
 function pctBelow(v) {
   if (!cdf) return v * 100;
   const idx = Math.round(clamp01(v) * (cdf.length - 1));
@@ -982,9 +947,6 @@ function valueFromPct(pct, below = false) {
   return 1;
 }
 
-// I percentili restano l'unità dei preset, così valgono su immagini diverse.
-// Le maniglie invece vivono in valori assoluti, per non incollarsi sui tratti
-// piatti dell'istogramma.
 function syncValsFromPct() {
   lowVal = valueFromPct(blackPct, true);
   highVal = valueFromPct(whitePct);
@@ -999,7 +961,6 @@ function drawInstrument() {
   ctx.fillStyle = '#101215';
   ctx.fillRect(0, 0, CW, PLOT_H);
 
-  // griglia
   ctx.strokeStyle = '#1e2228';
   ctx.lineWidth = 2;
   for (let i = 1; i < 4; i++) {
@@ -1009,7 +970,6 @@ function drawInstrument() {
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CW, gy); ctx.stroke();
   }
 
-  // istogramma
   if (histogram) {
     const bins = histogram.length;
     let peak = 0;
@@ -1025,12 +985,10 @@ function drawInstrument() {
   const lowX = valueToX(lowVal);
   const highX = valueToX(highVal);
 
-  // zone tagliate
   ctx.fillStyle = 'rgba(10,11,13,.72)';
   ctx.fillRect(0, 0, lowX, PLOT_H);
   ctx.fillRect(highX, 0, CW - highX, PLOT_H);
 
-  // curva, disegnata nell'intervallo utile
   const lut = buildCurveLut();
   ctx.strokeStyle = '#d9a441';
   ctx.lineWidth = 4;
@@ -1044,7 +1002,6 @@ function drawInstrument() {
   }
   ctx.stroke();
 
-  // punti
   for (const p of curvePoints) {
     const px = lowX + p.x * (highX - lowX);
     const py = PLOT_H - p.y * PLOT_H;
@@ -1057,7 +1014,6 @@ function drawInstrument() {
     ctx.stroke();
   }
 
-  // maniglie di taglio
   ctx.fillStyle = '#191c20';
   ctx.fillRect(0, PLOT_H, CW, GUT);
   ctx.strokeStyle = '#272b31';
@@ -1080,7 +1036,6 @@ function drawInstrument() {
   drawHandle(lowX, '#0a0b0d');
   drawHandle(highX, '#e9ebee');
 
-  // rampa di uscita
   const pal = paletteLut(controls.palette.value);
   const rampTop = PLOT_H + GUT + 8;
   const rampH = RAMP_H - 16;
@@ -1219,8 +1174,6 @@ $('curveReset').addEventListener('click', () => {
   schedulePreview();
 });
 
-/* ---------- preset ---------- */
-
 const PRESETS = {
   neutro: { label: 'Neutro, displacement', s: { palette: 'gray', invert: false, black: 0, white: 100, blur: 0, quality: 96, curve: [[0, 0], [1, 1]] } },
   raggix: { label: 'Raggi X', s: { palette: 'xray', invert: true, black: 1, white: 99, blur: 1.5, quality: 94, curve: [[0, 0], [0.3, 0.06], [0.58, 0.3], [0.82, 0.72], [1, 1]] } },
@@ -1334,8 +1287,6 @@ $('deletePreset').addEventListener('click', () => {
   setStatus(`Preset "${name}" eliminato.`, 'ok');
 });
 
-/* ---------- caricamento ---------- */
-
 function loadFromSrc(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -1354,9 +1305,6 @@ function fileToDataUrl(file) {
   });
 }
 
-// Tre strade in ordine di robustezza. createImageBitmap lavora direttamente sul
-// File. Il data URL funziona anche su file://, dove i blob URL vengono rifiutati
-// perche' l'origine del documento e' null. Il blob URL resta come ultima spiaggia.
 async function decodeImage(file) {
   const failures = [];
   if (typeof createImageBitmap === 'function') {
@@ -1420,8 +1368,6 @@ fileInput.addEventListener('change', (e) => pickFile(e.target.files && e.target.
 ['dragleave', 'drop'].forEach(n => drop.addEventListener(n, (e) => { e.preventDefault(); drop.classList.remove('drag'); }));
 drop.addEventListener('drop', (e) => pickFile(e.dataTransfer.files && e.dataTransfer.files[0]));
 
-/* ---------- motore ---------- */
-
 function scaledCanvas(img, sx, sy, sw, sh, tw, th) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(tw));
@@ -1438,10 +1384,6 @@ function fitSize(w, h, maxSide) {
   return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
 }
 
-// Misura d'uscita richiesta, anche sopra la sorgente. Per la stampa serve: una
-// foto da 1500px deve poter dare una mappa da 2480px a 210mm e 300dpi. La
-// profondita' e' un campo continuo, ingrandirla non inventa dettaglio ma non
-// introduce nemmeno artefatti. Il tetto e' sui pixel totali, per la memoria.
 const MAX_OUT_PIXELS = 40e6;
 
 function targetSize(w, h, longSide) {
@@ -1452,14 +1394,9 @@ function targetSize(w, h, longSide) {
 
 const FORCE_WASM = 'depthmap-force-wasm';
 
-// La libreria concatena le creazioni di sessione su una promise condivisa
-// (webInitChain). Se una fallisce, quella promise resta rifiutata e ogni
-// tentativo successivo rilancia lo stesso errore senza ricaricare niente: un
-// ripiego a runtime e' impossibile. Quindi il device va deciso prima, e il primo
-// tentativo deve essere quello buono.
 async function pickDevice() {
   if (IS_SAFARI) return 'wasm';
-  try { if (localStorage.getItem(FORCE_WASM) === '1') return 'wasm'; } catch (e) { /* storage negato */ }
+  try { if (localStorage.getItem(FORCE_WASM) === '1') return 'wasm'; } catch (e) {  }
   if (!('gpu' in navigator)) return 'wasm';
   try {
     const adapter = await navigator.gpu.requestAdapter();
@@ -1470,9 +1407,6 @@ async function pickDevice() {
   return 'webgpu';
 }
 
-// Un modello senza file ONNX fa fallire la creazione della sessione, e un
-// fallimento lascia rifiutata la catena di init della libreria: da li' in poi
-// serve ricaricare. Meglio chiederlo all'API prima di toccare la libreria.
 async function verifyRepo(id) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(id)) return { ok: false, reason: 'il nome del repo non e\u2019 valido' };
   try {
@@ -1514,7 +1448,7 @@ async function getEstimator(modelId) {
     return est;
   } catch (e) {
     if (device === 'webgpu') {
-      try { localStorage.setItem(FORCE_WASM, '1'); } catch (err) { /* storage negato */ }
+      try { localStorage.setItem(FORCE_WASM, '1'); } catch (err) {  }
       e.recoverable = true;
     }
     throw e;
@@ -1652,10 +1586,6 @@ async function runTiled(est, out, grid) {
       const boxW = x1 - x0;
       const boxH = y1 - y0;
 
-      // Il modello ridimensiona comunque a circa 518px al suo interno, quindi dare
-      // in pasto una tela piu' grande non aggiunge dettaglio: aggiunge solo
-      // l'interpolazione che la libreria fa per riportare l'output alla misura di
-      // ingresso. Il reingrandimento lo faccio io qui sotto, dove serve.
       const ts = Math.min(1, 518 / Math.max(boxW, boxH));
       const eta = done > 0 ? ` · resta ${formatEta(((performance.now() - started) / done) * (total - done))}` : '';
       setProgress(35 + (done / total) * 55, `tile ${done + 1}/${total}${eta}`);
@@ -1670,8 +1600,6 @@ async function runTiled(est, out, grid) {
       const tw = tile.width;
       const th = tile.height;
 
-      // Tabelle di campionamento precalcolate: nel ciclo interno non resta
-      // nessuna chiamata di funzione ne' Math.floor per pixel.
       const cx0 = new Int32Array(boxW);
       const cx1 = new Int32Array(boxW);
       const ctx0 = new Float32Array(boxW);
@@ -1693,7 +1621,6 @@ async function runTiled(est, out, grid) {
         wxArr[x] = wx;
       }
 
-      // Allineamento affine alla passata globale, minimi quadrati su un sottocampione.
       let sT = 0, sG = 0, sTT = 0, sTG = 0, n = 0;
       for (let y = 0; y < boxH; y += 4) {
         const fy = Math.min(th - 1.001, (y / boxH) * th);
@@ -1771,13 +1698,6 @@ async function runTiled(est, out, grid) {
   return normalize({ data: acc, width: out.w, height: out.h });
 }
 
-// L'istogramma del grafico ha 160 intervalli, che bastano per disegnarlo ma non
-// per costruire la curva di equalizzazione: sulla fascia delle montagne ne
-// cadevano solo 12, e tra un punto e l'altro la curva tracciava segmenti dritti.
-// Erano quelle faccette a sembrare sgranatura.
-//
-// Qui ne uso 1024, e li liscio: senza lisciatura un istogramma cosi' fine
-// diventa frastagliato e il rimedio peggiora il male.
 const EQ_BINS = 1024;
 let eqHistogram = null;
 
@@ -1786,7 +1706,6 @@ function computeEqHistogram(field) {
   const d = field.data;
   for (let i = 0; i < d.length; i++) raw[Math.floor(clamp01(d[i]) * (EQ_BINS - 1))]++;
 
-  // lisciatura gaussiana, tre passate di media mobile
   const R = 6;
   let a = raw;
   let b = new Float64Array(EQ_BINS);
@@ -1861,8 +1780,7 @@ generateBtn.addEventListener('click', async () => {
       console.error(e);
       const stack = (e && e.stack ? String(e.stack) : '').split('\n').slice(0, 3).join('\n');
       console.error('diagnostica:', envReport(), '\n', stack);
-      // Dopo un fallimento la catena di init della libreria resta rifiutata,
-      // quindi qualsiasi nuovo tentativo in questa pagina darebbe lo stesso errore.
+      
       const hint = e && e.preflight ? '' : e && e.recoverable
         ? '\nLa GPU non e\u2019 utilizzabile qui. Ricarica la pagina: al prossimo avvio uso la CPU.'
         : '\nRicarica la pagina prima di riprovare.';
@@ -1877,13 +1795,6 @@ generateBtn.addEventListener('click', async () => {
   }
 });
 
-/* ---------- resa ---------- */
-
-// Sfocatura fatta a mano sul campo di profondita', non sul canvas. Tre motivi:
-// ctx.filter non e' disponibile ovunque e fallisce in silenzio; sfocare i valori
-// di profondita' prima della mappatura evita di mescolare colori della palette;
-// e cosi' il raggio si puo' riscalare sull'anteprima, che altrimenti mostrerebbe
-// una sfocatura diversa da quella del file esportato.
 function boxesForGauss(sigma, n) {
   const wIdeal = Math.sqrt((12 * sigma * sigma / n) + 1);
   let wl = Math.floor(wIdeal);
@@ -1935,9 +1846,6 @@ function blurField(field, sigma) {
   return { data: a, width: w, height: h };
 }
 
-// Rumore di valore su reticolo, con seme fisso e coordinate espresse nei pixel
-// del file finale. Due conseguenze: l'anteprima mostra la stessa grana che
-// esporterai, e due esportazioni di fila sono identiche byte per byte.
 const GRAIN_SEED = 0x9e3779b9 | 0;
 
 function hash2(x, y) {
@@ -1947,9 +1855,6 @@ function hash2(x, y) {
   return (h >>> 0) / 4294967295;
 }
 
-// Cella da 1px: rumore bianco, come Aggiungi disturbo di Photoshop. Sopra 1px il
-// valore viene interpolato tra i nodi del reticolo con smoothstep, quindi la
-// grana ha una dimensione leggibile e resta coerente invece di sfarfallare.
 function grainAt(x, y, cell) {
   if (cell <= 1) return hash2(x, y);
   const gx = x / cell;
@@ -1967,14 +1872,6 @@ function grainAt(x, y, cell) {
   return (a + (b - a) * ux) * (1 - uy) + (c + (d - c) * ux) * uy;
 }
 
-// Filtro guidato, versione veloce. Il modello vede l'immagine a circa 518px,
-// quindi i contorni della profondita' escono sfocati e spostati rispetto a
-// quelli della foto. Questo filtro usa la foto come riferimento: dove la foto ha
-// un bordo netto obbliga la profondita' a esserlo nello stesso punto, dove la
-// foto e' uniforme non tocca nulla.
-//
-// I coefficienti si calcolano su una copia ridotta e si applicano a piena
-// risoluzione: stesso risultato, memoria e tempo molto minori.
 function boxMean(src, dst, tmp, w, h, r) {
   boxBlurH(src, tmp, w, h, r);
   boxBlurV(tmp, dst, w, h, r);
@@ -2026,7 +1923,6 @@ function guidedRefine(depth, guide, radius, eps) {
   return { data: out, width: W, height: H };
 }
 
-// luminanza della sorgente alla misura della mappa, serve come riferimento
 function buildGuide(w, h) {
   const c = scaledCanvas(sourceImage, 0, 0, srcW, srcH, w, h);
   const px = c.getContext('2d').getImageData(0, 0, w, h).data;
@@ -2038,10 +1934,6 @@ function buildGuide(w, h) {
   return g;
 }
 
-// La curva e' una tabella di 256 voci, ma la profondita' e' in virgola mobile.
-// Arrotondando all'indice piu' vicino si buttavano via tutti i valori intermedi:
-// una fascia stretta espansa dalla curva usciva a scalini invece che sfumata.
-// Interpolando tra due voci la precisione del campo originale si conserva.
 function sampleCurve(lut, t) {
   const p = clamp01(t) * 255;
   const j = p | 0;
@@ -2052,13 +1944,10 @@ function sampleCurve(lut, t) {
 }
 
 function renderField(field) {
-  // Il cursore esprime pixel del file finale: sull'anteprima ridotta il raggio
-  // va riscalato, altrimenti quello che vedi non e' quello che esporti.
+  
   const blurPx = Number(controls.blur.value);
   const scale = fullDepth && fullDepth.width ? field.width / fullDepth.width : 1;
 
-  // Il cursore Contorni fonde la mappa grezza con quella raffinata, cosi' puoi
-  // dosarlo senza rifare l'inferenza.
   const edgeMix = Number(controls.edges.value) / 100;
   const refined = field === fullDepth ? fullRefined : field === proxyDepth ? proxyRefined : null;
   let base = field;
@@ -2072,9 +1961,7 @@ function renderField(field) {
   const work = blurPx > 0 ? blurField(base, blurPx * scale) : base;
   const low = lowVal;
   const span = Math.max(1e-6, highVal - lowVal);
-  // L'equalizzazione agisce PRIMA della curva manuale, cosi' i due controlli si
-  // sommano invece di combattersi: la curva disegnata a mano continua a fare
-  // quello che ci si aspetta anche a equalizzazione attiva.
+  
   let curve = buildCurveLut();
   const eqAmt = Number(controls.equalize.value) / 100;
   if (eqAmt > 0) {
@@ -2099,15 +1986,10 @@ function renderField(field) {
   const imageData = new ImageData(width, height);
   const dst = imageData.data;
 
-  // La grana perturba il livello tonale prima della lettura della palette, non i
-  // canali RGB dopo: resta monocromatica rispetto alla rampa invece di sporcare
-  // i colori, e su scala di grigi si comporta esattamente come la grana classica.
   const grainAmt = Number(controls.grain.value);
   const grainCell = Number(controls.grainSize.value);
   const outScale = scale > 0 ? 1 / scale : 1;
-  // L'interpolazione tra i nodi del reticolo riduce la varianza, quindi a parita'
-  // di cursore una grana larga risulterebbe piu' debole. Compenso, cosi' la
-  // percentuale indica sempre la stessa forza.
+  
   const cellGain = grainCell > 1 ? 1.6 - 0.6 / grainCell : 1;
   const amp = (grainAmt / 100) * 80 * cellGain;
 
@@ -2198,8 +2080,6 @@ const dpiValue = () => Math.min(1200, Math.max(72, Number(controls.dpi.value) ||
 const mmToPx = (mm, dpi) => Math.round((mm / 25.4) * dpi);
 const pxToMm = (px, dpi) => (px / dpi) * 25.4;
 
-// Il motore ragiona solo in pixel. I millimetri sono una vista su quel numero,
-// non un percorso di calcolo diverso: si convertono qui e basta.
 function outputLongSide() {
   const raw = Number(controls.outSize.value) || 0;
   const px = sizeUnit === 'mm' ? mmToPx(raw, dpiValue()) : Math.round(raw);
@@ -2222,16 +2102,10 @@ function setUnit(next, convert) {
   $('outUnit').textContent = next;
   $('unitPx').setAttribute('aria-pressed', String(next === 'px'));
   $('unitMm').setAttribute('aria-pressed', String(next === 'mm'));
-  try { localStorage.setItem(UNIT_KEY, next); } catch (e) { /* storage negato */ }
+  try { localStorage.setItem(UNIT_KEY, next); } catch (e) {  }
   updateSummary();
 }
 
-// Dice la conseguenza delle scelte fatte sopra: quante inferenze, che misura in
-// pixel e che misura fisica alla risoluzione scelta.
-// I tile aiutano su un soggetto ravvicinato e pieno di dettaglio, ma su una
-// scena ampia peggiorano: ogni riquadro viene normalizzato sul proprio
-// intervallo e il riallineamento non recupera del tutto. Meglio dirlo qui che
-// lasciarlo scoprire a chi usa il tool.
 function updateDetailNote() {
   const el = $('detailNote');
   el.textContent = Number(controls.detail.value) > 1
@@ -2273,9 +2147,6 @@ controls.grainSize.addEventListener('input', () => { readLabels(); schedulePrevi
 controls.quality.addEventListener('input', readLabels);
 controls.palette.addEventListener('change', () => { drawInstrument(); schedulePreview(); });
 
-// Senza questo, un JPEG da canvas nasce a 72 dpi e InDesign o Photoshop lo
-// piazzano alla misura fisica sbagliata. Il segmento APP0 JFIF sta subito dopo
-// il SOI e ha offset fissi: unita' a 13, Xdensity a 14-15, Ydensity a 16-17.
 function setJpegDensity(buffer, dpi) {
   const b = new Uint8Array(buffer);
   const isJfif = b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF && b[3] === 0xE0
@@ -2328,7 +2199,7 @@ $('clearCache').addEventListener('click', async () => {
     await idb('files', 'readwrite', s => { s.clear(); return null; });
     await idb('meta', 'readwrite', s => { s.clear(); return null; });
     estimators.clear();
-    try { localStorage.removeItem(FORCE_WASM); } catch (e) { /* storage negato */ }
+    try { localStorage.removeItem(FORCE_WASM); } catch (e) {  }
     await refreshCacheInfo();
     setStatus('Cache svuotata e ripiego su CPU azzerato. Il prossimo uso riscarica il modello e riprova la GPU.', 'ok');
   } catch (e) {
@@ -2336,9 +2207,6 @@ $('clearCache').addEventListener('click', async () => {
   }
 });
 
-// Se IndexedDB non accetta un ArrayBuffer (contesto file://, modalita' privata,
-// storage negato) meglio scoprirlo subito e spegnere la cache, invece di lasciare
-// che l'errore emerga a meta' del caricamento del modello.
 async function selfTestCache() {
   try {
     await idb('files', 'readwrite', s2 => s2.put({ buffer: new ArrayBuffer(8), type: 'selftest' }, '__selftest__'));
@@ -2351,14 +2219,9 @@ async function selfTestCache() {
   }
 }
 
-// In un'anteprima incorporata (iframe srcdoc, protocollo about:) l'origine e'
-// opaca: niente IndexedDB, niente memoria condivisa, e il bridge dell'host prova
-// a clonare oggetti che WebKit rifiuta. Meglio dirlo prima di far scaricare
-// cento megabyte di modello per poi fallire.
 const EMBEDDED = location.protocol === 'about:' || location.protocol === 'blob:';
 const FRAMED = (() => { try { return window.top !== window.self; } catch (e) { return true; } })();
 
-// Caricare e vedere l'immagine funziona anche qui: si blocca solo il calcolo.
 if (EMBEDDED) {
   embeddedBlock = true;
   setStatus('Anteprima incorporata: puoi caricare e vedere l\u2019immagine, ma il motore di calcolo non puo\u2019 girare qui.\nScarica il file e aprilo come pagina per generare la depth map.', 'warn');
@@ -2366,14 +2229,7 @@ if (EMBEDDED) {
   if (FRAMED) console.warn('la pagina gira dentro un iframe: se il modello non parte, aprila in una scheda dedicata');
   selfTestCache();
 }
-// Elenco modelli dall'API pubblica di Hugging Face, filtrato per compito e per
-// libreria. Nessuna chiave, nessun dato inviato: e' una GET con dei parametri.
 
-// I nomi dei repo non dicono nulla a chi non segue la letteratura, quindi li
-// classifico per famiglia. La distinzione che conta e' relativa contro metrica:
-// la prima da' solo l'ordine di profondita', ed e' quella che serve per
-// displacement e maschere; la seconda stima distanze in unita' reali, ma solo
-// dentro il dominio su cui e' stata addestrata.
 const FAMILIES = [
   {
     key: 'v2metric',
@@ -2458,17 +2314,14 @@ function updateModelNote() {
 
 controls.modelSelect.addEventListener('change', updateModelNote);
 
-// L'elenco automatico da Hugging Face e' stato rimosso: proponeva repo che il
-// browser non puo' eseguire. Qui restano solo modelli provati. Ripulisco anche
-// l'elenco salvato dalle versioni precedenti.
-try { localStorage.removeItem('depthmap-models-v1'); } catch (e) { /* storage negato */ }
+try { localStorage.removeItem('depthmap-models-v1'); } catch (e) {  }
 
 buildPresetSelect('');
 readLabels();
 updateModelNote();
 try {
   if (localStorage.getItem(UNIT_KEY) === 'mm') setUnit('mm', true);
-} catch (e) { /* storage negato */ }
+} catch (e) {  }
 updateSummary();
 updateDetailNote();
 drawInstrument();
