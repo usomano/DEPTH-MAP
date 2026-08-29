@@ -686,7 +686,8 @@ function envReport() {
   ].join(' · ');
 }
 
-env.allowLocalModels = false;
+env.allowLocalModels = true;
+env.localModelPath = './models/';
 env.allowRemoteModels = true;
 env.useBrowserCache = false;
 env.useCustomCache = true;
@@ -1442,7 +1443,7 @@ async function getEstimator(modelId) {
   }
 
   try {
-    const est = await pipeline('depth-estimation', modelId, { device, progress_callback: onProgress });
+    const est = await pipeline('depth-estimation', modelId, { device, dtype: 'q8', progress_callback: onProgress });
     estimators.set(key, est);
     refreshCacheInfo();
     return est;
